@@ -9,14 +9,14 @@ st.set_page_config(
     layout="wide"
 )
 
-# ID único de tu documento compartido de Google Sheets
+# ID único de tu documento de Google Sheets
 SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
 # --- FUNCIÓN PARA CARGAR INGRESOS (TABLA DE ALUMNOS) ---
 @st.cache_data(ttl=5)
 def cargar_ingresos():
-    # Conexión directa y explícita por nombre de pestaña
-    url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=INGRESOS"
+    # Usamos el formato de exportación directa que obliga a respetar el nombre de la hoja
+    url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&sheet=INGRESOS"
     
     # Saltamos la primera fila vacía para capturar la fila con los meses correctamente
     df = pd.read_csv(url_ingresos, skiprows=1, dtype=str).fillna("0")
@@ -25,7 +25,7 @@ def cargar_ingresos():
     df.rename(columns={df.columns[0]: 'Estudiante'}, inplace=True)
     df['Estudiante'] = df['Estudiante'].astype(str).str.strip()
     
-    # Filtrado estricto para limpiar cabeceras duplicadas o filas de totales inferiores
+    # Filtrado estricto para limpiar filas vacías, cabeceras rotas o la fila de totales del Sheets
     df = df[df['Estudiante'].str.contains('[a-zA-Z]', na=False)]
     df = df[~df['Estudiante'].str.contains('TOTAL', case=False, na=False)]
     
@@ -45,22 +45,22 @@ def cargar_ingresos():
 # --- FUNCIÓN PARA CARGAR EGRESOS (TABLA DE GASTOS) ---
 @st.cache_data(ttl=5)
 def cargar_egresos():
-    # Conexión directa y explícita por nombre de pestaña
-    url_egresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=EGRESOS"
+    # Usamos el formato de exportación directa apuntando a la hoja EGRESOS
+    url_egresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&sheet=EGRESOS"
     
     df_raw = pd.read_csv(url_egresos, dtype=str).fillna("0")
     
-    # Limpiamos los espacios en blanco en los nombres de las columnas
+    # Limpiamos espacios y convertimos columnas a mayúsculas
     df_raw.columns = [str(c).strip().upper() for c in df_raw.columns]
     
     lista_gastos = []
     
-    # Buscamos las columnas de meses disponibles en la hoja de egresos
+    # Identificamos las columnas de meses disponibles
     columnas_meses = [c for c in df_raw.columns if c != 'OBS' and not c.startswith('UNNAMED')]
     
     for _, fila in df_raw.iterrows():
         concepto = str(fila.get('OBS', '')).strip()
-        # Evitamos leer filas vacías o de totales integrados
+        # Evitamos procesar filas vacías o de totales
         if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper():
             continue
             
