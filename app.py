@@ -9,26 +9,28 @@ st.set_page_config(
     layout="wide"
 )
 
-# ID único de tu enlace compartido de Google Sheets
+# ID de tu documento de Google Sheets
 SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
-# --- FUNCIÓN AUTOMÁTICA PARA CARGAR INGRESOS (TABLA DE ALUMNOS) ---
-@st.cache_data(ttl=5)
+# --- FUNCIÓN PARA CARGAR INGRESOS (HOJA 1) ---
+@st.cache_data(ttl=3)
 def cargar_ingresos():
-    url_csv = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=INGRESOS"
+    # Usamos el formato de exportación directa por GID para asegurar que no se crucen las hojas
+    # gid=0 suele corresponder a la primera pestaña (INGRESOS)
+    url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
     
-    # Saltamos la primera fila vacía para capturar la fila con los meses correctamente
-    df = pd.read_csv(url_csv, skiprows=1, dtype=str).fillna("0")
+    # Saltamos la primera fila vacía para que la fila con los meses (MAY, JUN...) sea la cabecera real
+    df = pd.read_csv(url_ingresos, skiprows=1, dtype=str).fillna("0")
     
-    # Aseguramos el nombre de la columna de nómina
+    # Aseguramos el nombre de la columna de la nómina
     df.rename(columns={df.columns[0]: 'Estudiante'}, inplace=True)
     df['Estudiante'] = df['Estudiante'].astype(str).str.strip()
     
-    # Filtrado estricto para limpiar cabeceras duplicadas o filas de totales inferiores
+    # Filtrado estricto para limpiar cabeceras vacías o filas de totales inferiores
     df = df[df['Estudiante'].str.contains('[a-zA-Z]', na=False)]
     df = df[~df['Estudiante'].str.contains('TOTAL', case=False, na=False)]
     
-    # Función de privacidad para acortar nombres en la vista pública
+    # Privacidad de nombres en la web pública
     def simplificar_nombre(nombre_completo):
         partes = str(nombre_completo).split()
         if len(partes) >= 3:
@@ -41,28 +43,29 @@ def cargar_ingresos():
     return df
 
 
-# --- FUNCIÓN AUTOMÁTICA PARA CARGAR EGRESOS (TABLA DE GASTOS) ---
-@st.cache_data(ttl=5)
+# --- FUNCIÓN PARA CARGAR EGRESOS (HOJA 2) ---
+@st.cache_data(ttl=3)
 def cargar_egresos():
+    # Usamos la API de visualización estructurada apuntando directamente a la hoja EGRESOS
     url_csv = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=EGRESOS"
     
-    # Leemos la pestaña de Egresos directamente desde Google Sheets
     df_raw = pd.read_csv(url_csv, dtype=str).fillna("0")
     
-    # Buscamos las columnas de meses en la hoja de egresos (MAYO, JUNIO, JULIO...)
-    columnas_meses = [c for c in df_raw.columns if c.upper() != 'OBS']
+    # Aseguramos limpiar los nombres de las columnas
+    df_raw.columns = [str(c).strip().upper() for c in df_raw.columns]
     
     lista_gastos = []
     
-    # Procesamos las filas para estructurar la tabla de gastos de forma legible
+    # Buscamos las columnas de meses disponibles en la hoja de egresos
+    columnas_meses = [c for c in df_raw.columns if c != 'OBS' and not c.startswith('UNNAMED')]
+    
     for _, fila in df_raw.iterrows():
-        concepto = str(fila['OBS']).strip()
-        # Ignoramos filas vacías o decorativas en la hoja de cálculo
+        concepto = str(fila.get('OBS', '')).strip()
         if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper():
             continue
             
         for mes in columnas_meses:
-            valor_texto = str(fila[mes]).replace('$', '').replace(',', '').strip()
+            valor_texto = str(fila.get(mes, '0')).replace('$', '').replace(',', '').strip()
             try:
                 monto = float(valor_texto)
             except ValueError:
@@ -71,27 +74,26 @@ def cargar_egresos():
             if monto > 0:
                 lista_gastos.append({
                     "Concepto / Descripción": concepto,
-                    "Mes Correspondiente": mes.capitalize(),
+                    "Mes": mes.capitalize(),
                     "Monto ($)": monto
                 })
                 
-    # Si la hoja está temporalmente vacía, generamos un DataFrame con la estructura correcta
     if not lista_gastos:
-        return pd.DataFrame(columns=["Concepto / Descripción", "Mes Correspondiente", "Monto ($)"])
+        return pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
         
     return pd.DataFrame(lista_gastos)
 
 
-# --- CONTROL DE CARGA SEGURO ---
+# --- EJECUCIÓN SEGURA DE LA CARGA ---
 try:
     df_ingresos = cargar_ingresos()
     df_gastos = cargar_egresos()
 except Exception as e:
-    st.error(f"Error al conectar con Google Sheets en tiempo real: {e}")
+    st.error(f"Error al conectar con Google Sheets: {e}")
     st.stop()
 
 
-# --- MAPEO DINÁMICO DE APORTES MENSUALES (INGRESOS) ---
+# --- PROCESAMIENTO MENSÚAL DE INGRESOS ---
 meses_ingresos = ['MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'ENE', 'FEB']
 
 for i, mes in enumerate(meses_ingresos):
@@ -104,7 +106,7 @@ for i, mes in enumerate(meses_ingresos):
         df_ingresos[mes] = 0.0
 
 
-# --- CÁLCULOS GENERALES EN TIEMPO REAL ---
+# --- CÁLCULOS FILTRADOS FINALES ---
 total_ingresos = df_ingresos[meses_ingresos].sum().sum()
 total_gastos = df_gastos["Monto ($)"].sum() if not df_gastos.empty else 0.0
 saldo_disponible = total_ingresos - total_gastos
@@ -115,7 +117,7 @@ st.title("📊 Transparencia Financiera - 6to 'B'")
 st.markdown("Plataforma abierta para la revisión y auditoría de fondos de los padres de familia.")
 st.markdown("---")
 
-# 1. BLOQUE DE MÉTRICAS GENERALES DINÁMICAS
+# 1. BLOQUE DE MÉTRICAS GENERALES
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric(label="🟢 Total Recaudado (Ingresos)", value=f"${total_ingresos:,.2f}")
@@ -131,7 +133,7 @@ with col3:
 
 st.markdown("---")
 
-# 2. PESTAÑAS DE NAVEGACIÓN
+# 2. PESTAÑAS DE INFORMACIÓN
 tab_balance, tab_ingresos, tab_gastos = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "💸 Detalle de Gastos"])
 
 with tab_balance:
