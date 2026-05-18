@@ -10,39 +10,29 @@ st.set_page_config(
 )
 
 # --- FUNCIÓN PARA CARGAR DESDE GOOGLE SHEETS EN TIEMPO REAL ---
-# Reducimos al mínimo el tiempo de caché para forzar la actualización
-@st.cache_data(ttl=2)  
+@st.cache_data(ttl=5)
 def cargar_y_anonimizar_datos():
+    # ID de tu enlace de Google Sheets compartido
     SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
     SHEET_NAME = "INGRESOS" 
     
-    # URL de exportación directa a CSV apuntando a la pestaña correcta
+    # URL de exportación directa a formato CSV limpia
     url_csv = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
     
-    # 1. Leemos todo tratándolo estrictamente como texto/string desde el inicio
-    df_raw = pd.read_csv(url_csv, header=None, dtype=str).fillna("")
+    # Forzamos la lectura directa de la tabla tratando todo estrictamente como texto
+    # Saltamos las primeras líneas si el archivo de Google tiene títulos institucionales arriba
+    df = pd.read_csv(url_csv, dtype=str).fillna("0")
     
-    # 2. Buscamos de forma manual la fila donde arranca la cabecera real
-    fila_header = 0
-    for idx, row in df_raw.iterrows():
-        valores_fila = [str(val).upper().strip() for val in row.values]
-        if any('NOMINA' in s or 'ESTUDIANTE' in s or 'MAY' in s for s in valores_fila):
-            fila_header = idx
-            break
-            
-    # 3. Cargamos el DataFrame definitivo saltando las filas decorativas superiores
-    df = pd.read_csv(url_csv, skiprows=fila_header)
-    
-    # Forzamos que la primera columna se llame Estudiante
+    # Estandarizamos el nombre de la primera columna que contiene los alumnos
     df.rename(columns={df.columns[0]: 'Estudiante'}, inplace=True)
     
-    # Limpieza de espacios y eliminación de registros nulos en nombres
-    df = df[df['Estudiante'].notna()]
+    # Limpieza absoluta de espacios en blanco
     df['Estudiante'] = df['Estudiante'].astype(str).str.strip()
     
-    # FILTRADO DE TOTALES: Eliminamos la fila 42 que tiene los totales numéricos sueltos
+    # FILTRADO RADICAL: Conservamos únicamente las filas que representen nombres reales (letras)
+    # y descartamos cualquier celda vacía, cabeceras rotas o la fila 42 de totales numéricos puros.
+    df = df[df['Estudiante'].str.contains('[a-zA-Z]', na=False)]
     df = df[~df['Estudiante'].str.contains('TOTAL', case=False, na=False)]
-    df = df[df['Estudiante'].str.contains('[a-zA-Z]', na=False)] # Solo nombres con letras reales
     
     # FUNCIÓN DE PRIVACIDAD: Conservar solo Primer Apellido y Primer Nombre
     def simplificar_nombre(nombre_completo):
@@ -56,7 +46,7 @@ def cargar_y_anonimizar_datos():
     df['Estudiante_Publico'] = df['Estudiante'].apply(simplificar_nombre)
     return df
 
-# Control de carga
+# Control de carga seguro
 try:
     df_ingresos = cargar_y_anonimizar_datos()
 except Exception as e:
@@ -72,16 +62,25 @@ gastos_data = {
 }
 df_gastos = pd.DataFrame(gastos_data)
 
-# --- CÁLCULOS AUTOMÁTICOS DEL BALANCE DE CAJA ---
+# --- MAPEO SEGURO DE COLUMNAS DE APORTES MENSÚALES ---
+# Mapeamos los meses que están en tu Google Sheets en orden de columnas
 meses = ['MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'ENE', 'FEB']
 
-# Conversión y limpieza de los aportes de las columnas mensuales
-for mes in meses:
-    if mes in df_ingresos.columns:
-        df_ingresos[mes] = pd.to_numeric(df_ingresos[mes], errors='coerce').fillna(0)
+# Buscamos dinámicamente si la columna existe (por ejemplo, si se llama 'MAY' o tu columna C, D, E, etc.)
+# Si no la encuentra por nombre exacto, asigna la columna por su posición física en el Excel
+for i, mes in enumerate(meses):
+    # Buscamos si hay alguna columna que contenga el nombre del mes
+    col_encontrada = [c for c in df_ingresos.columns if mes in str(c).upper()]
+    
+    if col_encontrada:
+        df_ingresos[mes] = pd.to_numeric(df_ingresos[col_encontrada[0]], errors='coerce').fillna(0)
+    elif i + 1 < len(df_ingresos.columns):
+        # Mapeo de respaldo por índice de columna física si los nombres no coinciden
+        df_ingresos[mes] = pd.to_numeric(df_ingresos.iloc[:, i + 1], errors='coerce').fillna(0)
     else:
         df_ingresos[mes] = 0.0
 
+# Cálculos globales del aula
 total_ingresos = df_ingresos[meses].sum().sum()
 total_gastos = df_gastos["Monto ($)"].sum()
 saldo_disponible = total_ingresos - total_gastos
@@ -112,7 +111,6 @@ tab_balance, tab_ingresos, tab_gastos = st.tabs(["📉 Balance de Caja", "💰 C
 
 with tab_balance:
     st.subheader("Flujo de Efectivo Mensual")
-    st.markdown("Comparativa global de ingresos frente a egresos registrados por el comité.")
     
     df_comparativo = pd.DataFrame({
         "Concepto": ["Ingresos Totales", "Gastos Totales"],
@@ -132,7 +130,6 @@ with tab_balance:
 
 with tab_ingresos:
     st.subheader("🔍 Verificación de Aportes por Alumno")
-    st.markdown("Seleccione el nombre de su representado para constatar que sus cuotas mensuales estén debidamente asentadas.")
     
     estudiante_sel = st.selectbox("Seleccione el alumno:", sorted(df_ingresos['Estudiante_Publico'].unique()))
     datos_alumno = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
@@ -152,8 +149,6 @@ with tab_ingresos:
 
 with tab_gastos:
     st.subheader("📋 Cuentas Claras: Desglose de Egresos")
-    st.markdown("Lista detallada y justificada de las compras, adquisiciones o egresos del aula.")
-    
     st.dataframe(df_gastos, use_container_width=True)
     
     st.markdown("---")
