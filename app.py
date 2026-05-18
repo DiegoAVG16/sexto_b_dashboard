@@ -13,10 +13,10 @@ st.set_page_config(
 SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
 # --- FUNCIÓN PARA CARGAR INGRESOS (TABLA DE ALUMNOS) ---
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=3)
 def cargar_ingresos():
-    # Usamos el formato de exportación directa que obliga a respetar el nombre de la hoja
-    url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&sheet=INGRESOS"
+    # El uso de gid=0 en el endpoint /export obliga a Google a devolver estrictamente la primera pestaña (INGRESOS)
+    url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
     
     # Saltamos la primera fila vacía para capturar la fila con los meses correctamente
     df = pd.read_csv(url_ingresos, skiprows=1, dtype=str).fillna("0")
@@ -43,9 +43,9 @@ def cargar_ingresos():
 
 
 # --- FUNCIÓN PARA CARGAR EGRESOS (TABLA DE GASTOS) ---
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=3)
 def cargar_egresos():
-    # Usamos el formato de exportación directa apuntando a la hoja EGRESOS
+    # Usamos el formato de exportación directa apuntando por nombre a la hoja EGRESOS
     url_egresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&sheet=EGRESOS"
     
     df_raw = pd.read_csv(url_egresos, dtype=str).fillna("0")
