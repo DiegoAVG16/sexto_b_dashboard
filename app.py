@@ -10,46 +10,46 @@ st.set_page_config(
 )
 
 # --- FUNCIÓN PARA CARGAR DESDE GOOGLE SHEETS EN TIEMPO REAL ---
-@st.cache_data(ttl=10)  # Limpia el caché cada 10 segundos para actualizar datos en tiempo real
+@st.cache_data(ttl=5)  # El caché se actualizará muy rápido (cada 5 segundos) para ver los cambios al instante
 def cargar_y_anonimizar_datos():
     # ID de tu enlace de Google Sheets compartido
     SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
-    SHEET_NAME = "NOMINA 6TO B" 
+    
+    # CORRECCIÓN 1: Apuntamos al nombre exacto de tu pestaña en Google Sheets
+    SHEET_NAME = "INGRESOS" 
     
     # Construcción de la URL de exportación directa en formato CSV
-    url_csv = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME.replace(' ', '%20')}"
+    url_csv = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
     
-    # SOLUCIÓN RADICAL: Cargamos todo el CSV inicial forzando que cada celda sea interpretada como string (texto)
-    # Rellenamos los vacíos con texto en blanco para evitar tipos 'float' (NaN) involuntarios
+    # Cargamos el CSV forzando que todo se lea inicialmente como texto (string) para evitar errores de tipo 'float'
     df_raw = pd.read_csv(url_csv, header=None, dtype=str).fillna("")
     
-    # Localización de la fila de encabezados barriendo la lista de manera segura como texto puro
+    # Localización dinámica de la fila donde empiezan los meses (MAY, JUN, etc.) o la nómina
     fila_header = 0
     for idx, row in df_raw.iterrows():
         valores_fila = [str(val).upper().strip() for val in row.values]
-        # Si la fila contiene palabras clave de la estructura, la fijamos como cabecera
         if any('NOMINA' in s or 'ESTUDIANTE' in s or 'MAY' in s for s in valores_fila):
             fila_header = idx
             break
             
-    # Volvemos a procesar el dataframe saltando de forma segura las filas superiores fijadas
+    # Volvemos a procesar el dataframe saltando las filas superiores de títulos institucionales
     df = pd.read_csv(url_csv, skiprows=fila_header)
     
     # Estandarizamos el nombre de la primera columna para nuestro buscador interno
     df.rename(columns={df.columns[0]: 'Estudiante'}, inplace=True)
     
-    # Limpieza estricta: eliminamos filas donde el estudiante sea nulo o esté vacío
+    # Limpieza estricta de registros vacíos
     df = df[df['Estudiante'].notna()]
     df['Estudiante'] = df['Estudiante'].astype(str).str.strip()
     
-    # Exclusión de seguridad para evitar que las filas de balances o totales del Excel alteren los cálculos
+    # CORRECCIÓN 2: Eliminamos de forma segura filas de totales inferiores o celdas numéricas sueltas en la nómina
     df = df[~df['Estudiante'].str.contains('TOTAL', case=False, na=False)]
+    df = df[df['Estudiante'].str.contains('[a-zA-Z]', na=False)] # Solo conserva filas que tengan letras (nombres reales)
     
-    # FUNCIÓN DE PRIVACIDAD: Acortar nombres para acceso seguro en grupos de WhatsApp
+    # FUNCIÓN DE PRIVACIDAD: Acortar nombres (Primer Apellido + Primer Nombre)
     def simplificar_nombre(nombre_completo):
         partes = str(nombre_completo).split()
         if len(partes) >= 3:
-            # Retorna: Primer Apellido + Primer Nombre
             return f"{partes[0]} {partes[2]}"
         elif len(partes) == 2:
             return f"{partes[0]} {partes[1]}"
@@ -164,3 +164,4 @@ with tab_gastos:
     st.markdown("---")
     fig_gastos = px.pie(df_gastos, values='Monto ($)', names='Categoría', title='¿Cómo se distribuyen los gastos del aula?')
     st.plotly_chart(fig_gastos, use_container_width=True)
+    
