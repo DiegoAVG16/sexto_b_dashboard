@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Configuración de la página - Acceso directo, público y optimizado para dispositivos móviles
+# Configuración de la página
 st.set_page_config(
     page_title="Rendición de Cuentas - 6to B",
     page_icon="💰",
@@ -10,21 +10,19 @@ st.set_page_config(
 )
 
 # --- FUNCIÓN PARA CARGAR DESDE GOOGLE SHEETS EN TIEMPO REAL ---
-@st.cache_data(ttl=5)  # El caché se actualizará muy rápido (cada 5 segundos) para ver los cambios al instante
+# Reducimos al mínimo el tiempo de caché para forzar la actualización
+@st.cache_data(ttl=2)  
 def cargar_y_anonimizar_datos():
-    # ID de tu enlace de Google Sheets compartido
     SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
-    
-    # CORRECCIÓN 1: Apuntamos al nombre exacto de tu pestaña en Google Sheets
     SHEET_NAME = "INGRESOS" 
     
-    # Construcción de la URL de exportación directa en formato CSV
+    # URL de exportación directa a CSV apuntando a la pestaña correcta
     url_csv = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet={SHEET_NAME}"
     
-    # Cargamos el CSV forzando que todo se lea inicialmente como texto (string) para evitar errores de tipo 'float'
+    # 1. Leemos todo tratándolo estrictamente como texto/string desde el inicio
     df_raw = pd.read_csv(url_csv, header=None, dtype=str).fillna("")
     
-    # Localización dinámica de la fila donde empiezan los meses (MAY, JUN, etc.) o la nómina
+    # 2. Buscamos de forma manual la fila donde arranca la cabecera real
     fila_header = 0
     for idx, row in df_raw.iterrows():
         valores_fila = [str(val).upper().strip() for val in row.values]
@@ -32,21 +30,21 @@ def cargar_y_anonimizar_datos():
             fila_header = idx
             break
             
-    # Volvemos a procesar el dataframe saltando las filas superiores de títulos institucionales
+    # 3. Cargamos el DataFrame definitivo saltando las filas decorativas superiores
     df = pd.read_csv(url_csv, skiprows=fila_header)
     
-    # Estandarizamos el nombre de la primera columna para nuestro buscador interno
+    # Forzamos que la primera columna se llame Estudiante
     df.rename(columns={df.columns[0]: 'Estudiante'}, inplace=True)
     
-    # Limpieza estricta de registros vacíos
+    # Limpieza de espacios y eliminación de registros nulos en nombres
     df = df[df['Estudiante'].notna()]
     df['Estudiante'] = df['Estudiante'].astype(str).str.strip()
     
-    # CORRECCIÓN 2: Eliminamos de forma segura filas de totales inferiores o celdas numéricas sueltas en la nómina
+    # FILTRADO DE TOTALES: Eliminamos la fila 42 que tiene los totales numéricos sueltos
     df = df[~df['Estudiante'].str.contains('TOTAL', case=False, na=False)]
-    df = df[df['Estudiante'].str.contains('[a-zA-Z]', na=False)] # Solo conserva filas que tengan letras (nombres reales)
+    df = df[df['Estudiante'].str.contains('[a-zA-Z]', na=False)] # Solo nombres con letras reales
     
-    # FUNCIÓN DE PRIVACIDAD: Acortar nombres (Primer Apellido + Primer Nombre)
+    # FUNCIÓN DE PRIVACIDAD: Conservar solo Primer Apellido y Primer Nombre
     def simplificar_nombre(nombre_completo):
         partes = str(nombre_completo).split()
         if len(partes) >= 3:
@@ -58,7 +56,7 @@ def cargar_y_anonimizar_datos():
     df['Estudiante_Publico'] = df['Estudiante'].apply(simplificar_nombre)
     return df
 
-# Control y captura de excepciones en el servidor en la nube
+# Control de carga
 try:
     df_ingresos = cargar_y_anonimizar_datos()
 except Exception as e:
@@ -66,7 +64,6 @@ except Exception as e:
     st.stop()
 
 # --- REGISTRO DIRECTO DE GASTOS (EGRESOS) ---
-# Puedes editar montos o añadir conceptos directamente en esta lista cuando gustes
 gastos_data = {
     "Fecha": ["2026-05-10", "2026-05-15", "2026-06-02"],
     "Descripción / Concepto": ["Copias de exámenes de Matemáticas", "Cartelera para las fiestas patronales", "Agasajo del Día del Niño"],
@@ -78,7 +75,7 @@ df_gastos = pd.DataFrame(gastos_data)
 # --- CÁLCULOS AUTOMÁTICOS DEL BALANCE DE CAJA ---
 meses = ['MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'ENE', 'FEB']
 
-# Aseguramos la conversión de los datos de pagos a numéricos, reemplazando vacíos o textos por 0
+# Conversión y limpieza de los aportes de las columnas mensuales
 for mes in meses:
     if mes in df_ingresos.columns:
         df_ingresos[mes] = pd.to_numeric(df_ingresos[mes], errors='coerce').fillna(0)
@@ -110,7 +107,7 @@ with col3:
 
 st.markdown("---")
 
-# 2. PESTAÑAS DE NAVEGACIÓN INTERNA
+# 2. PESTAÑAS DE NAVEGACIÓN
 tab_balance, tab_ingresos, tab_gastos = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "💸 Detalle de Gastos"])
 
 with tab_balance:
@@ -137,11 +134,9 @@ with tab_ingresos:
     st.subheader("🔍 Verificación de Aportes por Alumno")
     st.markdown("Seleccione el nombre de su representado para constatar que sus cuotas mensuales estén debidamente asentadas.")
     
-    # Buscador optimizado y ordenado alfabéticamente
     estudiante_sel = st.selectbox("Seleccione el alumno:", sorted(df_ingresos['Estudiante_Publico'].unique()))
     datos_alumno = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
     
-    # Visualización de la fila de aportes del estudiante
     st.dataframe(datos_alumno[['Estudiante_Publico'] + meses], use_container_width=True)
     
     total_alumno = datos_alumno[meses].sum(axis=1).values[0]
@@ -164,4 +159,3 @@ with tab_gastos:
     st.markdown("---")
     fig_gastos = px.pie(df_gastos, values='Monto ($)', names='Categoría', title='¿Cómo se distribuyen los gastos del aula?')
     st.plotly_chart(fig_gastos, use_container_width=True)
-    
