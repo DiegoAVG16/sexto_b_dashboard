@@ -19,16 +19,12 @@ GID_INGRESOS = "0"
 GID_EGRESOS = "1460599602"  
 
 # Mapeo posicional exacto para la pestaña de INGRESOS:
-# Columna A (Estudiante) = Índice 0
-# Columna B (MAY) = Índice 1, Columna C (JUN) = Índice 2, etc.
 MAPEO_INGRESOS = {
     'MAY': 1, 'JUN': 2, 'JUL': 3, 'AGO': 4, 'SEP': 5,
     'OCT': 6, 'NOV': 7, 'DIC': 8, 'ENE': 9, 'FEB': 10
 }
 
 # Mapeo posicional exacto para la pestaña de EGRESOS:
-# Columna A (OBS / Concepto) = Índice 0
-# Columna B (MAYO) = Índice 1, Columna C (JUNIO) = Índice 2, etc.
 MAPEO_EGRESOS = {
     'MAYO': 1, 'JUNIO': 2, 'JULIO': 3, 'AGOSTO': 4, 'SEPTIEMBRE': 5,
     'OCTUBRE': 6, 'NOVIEMBRE': 7, 'DICIEMBRE': 8, 'ENERO': 9, 'FEBRERO': 10
@@ -105,7 +101,6 @@ def cargar_egresos():
         if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
             continue
             
-        # CORREGIDO: Eliminado el error de tipeo MAPEO_EGRESEDOS
         for mes_nombre, col_idx in MAPEO_EGRESOS.items():
             if col_idx < len(fila):
                 valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
@@ -114,6 +109,7 @@ def cargar_egresos():
                 except ValueError:
                     monto = 0.0
                     
+                # ALINEACIÓN CORREGIDA: Estructura de indentación limpia
                 if monto > 0:
                     lista_gastos.append({
                         "Concepto / Descripción": concepto,
