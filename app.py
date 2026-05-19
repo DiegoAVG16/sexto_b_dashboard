@@ -2,25 +2,21 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Configuración de la página del dashboard
+# Configuración de la interfaz del dashboard
 st.set_page_config(
-    page_title="Rendición de Cuentas - 6to B",
+    page_title="Transparencia Financiera - 6to B",
     page_icon="💰",
     layout="wide"
 )
 
-# ID único de tu documento de Google Sheets
+# Identificador único de la hoja de cálculo en Google Drive
 SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
-# --- IDENTIFICADORES DE PESTAÑA (GIDs) ---
-# REVISIÓN CRUCIAL: Abre tu Google Sheets en el navegador, haz clic en la pestaña EGRESOS
-# y mira el número que sale al final de la URL después de 'gid='. Cambia "1460599602" por ese número exacto.
+# Parámetros numéricos internos de pestaña (GIDs) obligatorios para evitar HTTP Error 400
 GID_INGRESOS = "0"
-GID_EGRESOS = "1460599602" 
+GID_EGRESOS = "1460599602"  # Este ID numérico garantiza la descarga directa sin rechazos
 
-# Mapeo posicional de columnas basado en tus capturas reales:
-# Columna B (Índice 1) = Nombres de Alumnos / Conceptos Gastos
-# Columna C (Índice 2) = MAYO, Columna D (Índice 3) = JUNIO, Columna E (Índice 4) = JULIO...
+# Mapeo de columnas correspondientes a los meses del año lectivo
 MAPEO_MESES = {
     'MAYO': 2,
     'JUNIO': 3,
@@ -34,23 +30,20 @@ MAPEO_MESES = {
     'FEBRERO': 11
 }
 
-# --- FUNCIÓN: CARGAR INGRESOS (ALUMNOS) ---
 @st.cache_data(ttl=2)
 def cargar_ingresos():
     url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID_INGRESOS}"
     df = pd.read_csv(url_ingresos, header=None, dtype=str).fillna("0")
     
-    # Saltamos las primeras filas de encabezado desalineadas
     df_datos = df.iloc[2:].copy()
     lista_ingresos = []
     
     for _, fila in df_datos.iterrows():
-        # En tu captura, los nombres están en la columna B (Índice 1)
         if len(fila) <= 1:
             continue
         nombre = str(fila.iloc[1]).strip()
         
-        # Saltarse filas vacías, de diseño o la fila de totales (Fila 42 que suma 135, 10, etc.)
+        # Filtro para omitir celdas de totales o vacías en la nómina
         if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "INGRESOS" in nombre.upper():
             continue
             
@@ -71,34 +64,32 @@ def cargar_ingresos():
         
     df_res = pd.DataFrame(lista_ingresos)
     
-    # Simplificación de nombres para el selector público
-    def simplificar(n):
+    # Formateo de nombres para visualización en el buscador público
+    def simplificar_nombre(n):
         partes = str(n).split()
         return f"{partes[0]} {partes[2]}" if len(partes) >= 3 else n
-    df_res['Estudiante_Publico'] = df_res['Estudiante'].apply(simplificar)
+        
+    df_res['Estudiante_Publico'] = df_res['Estudiante'].apply(simplificar_nombre)
     return df_res
 
-
-# --- FUNCIÓN: CARGAR EGRESOS (GASTOS) ---
 @st.cache_data(ttl=2)
 def cargar_egresos():
-    # Usar el GID numérico directo elimina por completo el HTTP Error 400
+    # La consulta explícita por gid elimina de raíz el error de conexión Bad Request
     url_egresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID_EGRESOS}"
     df = pd.read_csv(url_egresos, header=None, dtype=str).fillna("0")
     
-    # Fila 0 contiene los meses (MAYO, JUNIO...). Empezamos a evaluar desde fila 1
     df_datos = df.iloc[1:].copy()
     lista_gastos = []
     
     for _, fila in df_datos.iterrows():
-        # Concepto del gasto en la columna A (Índice 0) de la hoja EGRESOS
         concepto = str(fila.iloc[0]).strip()
+        
+        # Evita procesar filas vacías o descriptores de cabeceras
         if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
             continue
             
-        # Cruzamos la matriz buscando montos asignados a cada mes en esa fila
         for mes_nombre, col_idx in MAPEO_MESES.items():
-            # En la hoja egresos las columnas están recorridas un índice a la izquierda respecto a ingresos
+            # Desplazamiento posicional por diferencia de estructura en columnas de egresos
             idx_gasto = col_idx - 1 
             if idx_gasto < len(fila):
                 valor = str(fila.iloc[idx_gasto]).replace('$', '').replace(',', '').strip()
@@ -119,8 +110,7 @@ def cargar_egresos():
         
     return pd.DataFrame(lista_gastos)
 
-
-# --- PROCESAMIENTO GENERAL ---
+# Flujo lógico de procesamiento e renderizado de la interfaz
 try:
     df_ingresos = cargar_ingresos()
     df_gastos = cargar_egresos()
@@ -128,45 +118,50 @@ try:
 except Exception as e:
     error_conexion = True
     st.error(f"⚠️ Error de Comunicación con Google Sheets: {e}")
-    st.info("💡 Solución rápida: Asegúrate de colocar el GID correcto de la pestaña EGRESOS en la línea 19 del código.")
+    st.info("Asegúrese de validar que el ID de la hoja de cálculo y el GID asignado sigan siendo válidos y públicos.")
 
 if not error_conexion:
     meses_cols = list(MAPEO_MESES.keys())
     
-    # Totales Dinámicos calculados por código puro de Python
+    # Cálculos internos de saldos y agregaciones
     total_ingresos = df_ingresos[meses_cols].sum().sum()
     total_gastos = df_gastos["Monto ($)"].sum() if not df_gastos.empty else 0.0
     saldo_caja = total_ingresos - total_gastos
 
-    # --- DISEÑO DEL DASHBOARD ---
     st.title("📊 Transparencia Financiera - 6to 'B'")
-    st.markdown("Plataforma abierta para la revisión y auditoría de fondos en tiempo real.")
+    st.markdown("Plataforma abierta para la revisión y auditoría de fondos de los padres de familia.")
     st.markdown("---")
 
-    # Bloques de Métricas Principales
-    c1, c2, c3 = st.columns(3)
-    with c1:
+    # Fila de indicadores financieros clave
+    col_inc_1, col_inc_2, col_inc_3 = st.columns(3)
+    with col_inc_1:
         st.metric(label="🟢 Total Recaudado (Ingresos)", value=f"${total_ingresos:,.2f}")
-    with c2:
+    with col_inc_2:
         st.metric(label="🔴 Total Invertido (Gastos)", value=f"${total_gastos:,.2f}")
-    with c3:
+    with col_inc_3:
         st.metric(label="🔵 Saldo Neto Disponible en Caja", value=f"${saldo_caja:,.2f}")
 
     st.markdown("---")
 
-    tab1, tab2, tab3 = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "📋 Detalle de Gastos"])
+    pestaña_balance, pestaña_aportes, pestaña_egresos = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "📋 Detalle de Gastos"])
 
-    with tab1:
+    with pestaña_balance:
         st.subheader("Flujo de Efectivo Mensual")
         df_balance = pd.DataFrame({
             "Tipo": ["Ingresos Acumulados", "Gastos Acumulados"],
             "Monto ($)": [total_ingresos, total_gastos]
         })
-        fig = px.bar(df_balance, x="Tipo", y="Monto ($)", color="Tipo",
-                     color_discrete_map={"Ingresos Acumulados": "#2ecc71", "Gastos Acumulados": "#e74c3c"}, text_auto='.2f')
-        st.plotly_chart(fig, use_container_width=True)
+        fig_balance = px.bar(
+            df_balance, 
+            x="Tipo", 
+            y="Monto ($)", 
+            color="Tipo",
+            color_discrete_map={"Ingresos Acumulados": "#2ecc71", "Gastos Acumulados": "#e74c3c"}, 
+            text_auto='.2f'
+        )
+        st.plotly_chart(fig_balance, use_container_width=True)
 
-    with tab2:
+    with pestaña_aportes:
         st.subheader("🔍 Buscador de Aportes por Estudiante")
         if not df_ingresos.empty:
             estudiante_sel = st.selectbox("Seleccione el alumno para verificar sus pagos:", sorted(df_ingresos['Estudiante_Publico'].unique()))
@@ -176,7 +171,7 @@ if not error_conexion:
             total_estudiante = filtro[meses_cols].sum(axis=1).values[0]
             st.success(f"Aporte total entregado por el representante a la fecha: **${total_estudiante:,.2f}**")
 
-    with tab3:
+    with pestaña_egresos:
         st.subheader("📋 Cuentas Claras: Desglose de Egresos")
         if not df_gastos.empty:
             st.dataframe(df_gastos, use_container_width=True)
