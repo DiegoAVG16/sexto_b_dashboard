@@ -18,25 +18,22 @@ SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 GID_INGRESOS = "0"
 GID_EGRESOS = "1460599602"  
 
-# Mapeo de columnas según tu captura real:
-# Columna A (No.) = Índice 0
-# Columna B (Estudiante) = Índice 1
-# Columna C (MAYO) = Índice 2, Columna D (JUNIO) = Índice 3, etc.
-MAPEO_MESES = {
-    'MAYO': 2,
-    'JUNIO': 3,
-    'JULIO': 4,
-    'AGOSTO': 5,
-    'SEPTIEMBRE': 6,
-    'OCTUBRE': 7,
-    'NOVIEMBRE': 8,
-    'DICIEMBRE': 9,
-    'ENERO': 10,
-    'FEBRERO': 11
+# Mapeo posicional exacto para la pestaña de INGRESOS:
+# Columna A (No.) = 0, Columna B (Estudiante) = 1, Columna C (MAYO) = 2, Columna D (JUNIO) = 3...
+MAPEO_INGRESOS = {
+    'MAYO': 2, 'JUNIO': 3, 'JULIO': 4, 'AGOSTO': 5, 'SEPTIEMBRE': 6,
+    'OCTUBRE': 7, 'NOVIEMBRE': 8, 'DICIEMBRE': 9, 'ENERO': 10, 'FEBRERO': 11
+}
+
+# Mapeo posicional exacto para la pestaña de EGRESOS:
+# Columna A (OBS / Descripción) = 0, Columna B (MAYO) = 1, Columna C (JUNIO) = 2...
+MAPEO_EGRESOS = {
+    'MAYO': 1, 'JUNIO': 2, 'JULIO': 3, 'AGOSTO': 4, 'SEPTIEMBRE': 5,
+    'OCTUBRE': 6, 'NOVIEMBRE': 7, 'DICIEMBRE': 8, 'ENERO': 9, 'FEBRERO': 10
 }
 
 @st.cache_data(ttl=1)
-def descargar_csv_limpio(gid):
+def descargar_csv(gid):
     url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={gid}"
     try:
         response = requests.get(url, timeout=10)
@@ -48,26 +45,23 @@ def descargar_csv_limpio(gid):
 
 @st.cache_data(ttl=1)
 def cargar_ingresos():
-    df = descargar_csv_limpio(GID_INGRESOS)
+    df = descargar_csv(GID_INGRESOS)
     if df.empty or len(df) <= 1:
-        return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_MESES.keys()) + ['Estudiante_Publico'])
+        return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_INGRESOS.keys()) + ['Estudiante_Publico'])
         
     lista_ingresos = []
-    # Fila 0 es la cabecera, los datos empiezan en la fila 1
-    df_datos = df.iloc[1:].copy()
+    df_datos = df.iloc[1:].copy() # Fila 0 es la cabecera
     
     for _, fila in df_datos.iterrows():
         if len(fila) <= 1:
             continue
-            
         nombre = str(fila.iloc[1]).strip()
         
-        # Omitir celdas vacías accidentales o la fila de totales finales de la hoja
         if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "ESTUDIANTE" in nombre.upper():
             continue
             
         registro = {'Estudiante': nombre}
-        for mes_nombre, col_idx in MAPEO_MESES.items():
+        for mes_nombre, col_idx in MAPEO_INGRESOS.items():
             if col_idx < len(fila):
                 valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
                 try:
@@ -76,33 +70,29 @@ def cargar_ingresos():
                     registro[mes_nombre] = 0.0
             else:
                 registro[mes_nombre] = 0.0
-                
         lista_ingresos.append(registro)
         
     if not lista_ingresos:
-        return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_MESES.keys()) + ['Estudiante_Publico'])
+        return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_INGRESOS.keys()) + ['Estudiante_Publico'])
         
     df_res = pd.DataFrame(lista_ingresos)
     
-    # Simplificación para privacidad de nombres en la web pública
     def simplificar_nombre(n):
         partes = str(n).split()
         return f"{partes[0]} {partes[2]}" if len(partes) >= 3 else n
-        
     df_res['Estudiante_Publico'] = df_res['Estudiante'].apply(simplificar_nombre)
     return df_res
 
 @st.cache_data(ttl=1)
 def cargar_egresos():
-    df = descargar_csv_limpio(GID_EGRESOS)
-    # Si la hoja da error o está vacía, devolvemos un DataFrame con la estructura correcta ya armada
+    df = descargar_csv(GID_EGRESOS)
     df_vacio = pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
     
     if df.empty or len(df) <= 1:
         return df_vacio
         
-    df_datos = df.iloc[1:].copy()
     lista_gastos = []
+    df_datos = df.iloc[1:].copy() # Fila 0 es la cabecera
     
     for _, fila in df_datos.iterrows():
         if fila.empty or pd.isna(fila.iloc[0]):
@@ -112,10 +102,9 @@ def cargar_egresos():
         if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
             continue
             
-        for mes_nombre, col_idx in MAPEO_MESES.items():
-            idx_gasto = col_idx - 1 
-            if idx_gasto < len(fila):
-                valor = str(fila.iloc[idx_gasto]).replace('$', '').replace(',', '').strip()
+        for mes_nombre, col_idx in MAPEO_EGRESOS.items():
+            if col_idx < len(fila):
+                valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
                 try:
                     monto = float(valor)
                 except ValueError:
@@ -133,35 +122,24 @@ def cargar_egresos():
         
     return pd.DataFrame(lista_gastos)
 
-# --- PROCESAMIENTO SEGURO DE DATOS ---
-# Forzamos que siempre existan variables válidas pase lo que pase con el Sheets
-try:
-    df_ingresos = cargar_ingresos()
-except Exception:
-    df_ingresos = pd.DataFrame(columns=['Estudiante'] + list(MAPEO_MESES.keys()) + ['Estudiante_Publico'])
+# --- PROCESAMIENTO SEGURO ---
+df_ingresos = cargar_ingresos()
+df_gastos = cargar_egresos()
 
-try:
-    df_gastos = cargar_egresos()
-except Exception:
-    df_gastos = pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
-
-# Asegurar que todas las columnas de meses existan en ingresos para evitar errores matemáticos
-meses_cols = list(MAPEO_MESES.keys())
+meses_cols = list(MAPEO_INGRESOS.keys())
 for col in meses_cols:
     if col not in df_ingresos.columns:
         df_ingresos[col] = 0.0
 
-# Operaciones matemáticas seguras (si no hay datos, el valor por defecto es 0.0)
 total_ingresos = float(df_ingresos[meses_cols].sum().sum()) if not df_ingresos.empty else 0.0
 total_gastos = float(df_gastos["Monto ($)"].sum()) if (not df_gastos.empty and "Monto ($)" in df_gastos.columns) else 0.0
 saldo_caja = total_ingresos - total_gastos
 
-# --- RENDERIZADO DE LA INTERFAZ (Garantizado que se va a dibujar) ---
+# --- INTERFAZ GRÁFICA ---
 st.title("📊 Transparencia Financiera - 6to 'B'")
 st.markdown("Plataforma abierta para la revisión y auditoría de fondos de los padres de familia.")
 st.markdown("---")
 
-# Fila de indicadores financieros clave
 col_inc_1, col_inc_2, col_inc_3 = st.columns(3)
 with col_inc_1:
     st.metric(label="🟢 Total Recaudado (Ingresos)", value=f"${total_ingresos:,.2f}")
@@ -181,12 +159,8 @@ with pestaña_balance:
         "Monto ($)": [total_ingresos, total_gastos]
     })
     fig_balance = px.bar(
-        df_balance, 
-        x="Tipo", 
-        y="Monto ($)", 
-        color="Tipo",
-        color_discrete_map={"Ingresos Acumulados": "#2ecc71", "Gastos Acumulados": "#e74c3c"}, 
-        text_auto='.2f'
+        df_balance, x="Tipo", y="Monto ($)", color="Tipo",
+        color_discrete_map={"Ingresos Acumulados": "#2ecc71", "Gastos Acumulados": "#e74c3c"}, text_auto='.2f'
     )
     st.plotly_chart(fig_balance, use_container_width=True)
 
@@ -196,15 +170,14 @@ with pestaña_aportes:
         estudiante_sel = st.selectbox("Seleccione el alumno para verificar sus pagos:", sorted(df_ingresos['Estudiante_Publico'].dropna().unique()))
         filtro = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
         st.dataframe(filtro[['Estudiante'] + meses_cols], use_container_width=True)
-        
         total_estudiante = filtro[meses_cols].sum(axis=1).values[0] if not filtro.empty else 0.0
         st.success(f"Aporte total entregado por el representante a la fecha: **${total_estudiante:,.2f}**")
     else:
-        st.info("No se encontraron registros de estudiantes en la pestaña de ingresos.")
+        st.info("No se encontraron registros de estudiantes.")
 
 with pestaña_egresos:
     st.subheader("📋 Cuentas Claras: Desglose de Egresos")
-    if not df_gastos.empty and "Monto ($)" in df_gastos.columns and len(df_gastos) > 0:
+    if not df_gastos.empty and "Monto ($)" in df_gastos.columns:
         st.dataframe(df_gastos, use_container_width=True)
         fig_pie = px.pie(df_gastos, values='Monto ($)', names='Concepto / Descripción', title='¿Cómo se distribuyen los gastos del aula?')
         st.plotly_chart(fig_pie, use_container_width=True)
