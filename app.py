@@ -19,14 +19,12 @@ GID_INGRESOS = "0"
 GID_EGRESOS = "1460599602"  
 
 # Mapeo posicional exacto para la pestaña de INGRESOS:
-# Columna A (No.) = 0, Columna B (Estudiante) = 1, Columna C (MAYO) = 2, Columna D (JUNIO) = 3...
 MAPEO_INGRESOS = {
-    'MAYO': 2, 'JUNIO': 3, 'JULIO': 4, 'AGOSTO': 5, 'SEPTIEMBRE': 6,
-    'OCTUBRE': 7, 'NOVIEMBRE': 8, 'DICIEMBRE': 9, 'ENERO': 10, 'FEBRERO': 11
+    'MAY': 1, 'JUN': 2, 'JUL': 3, 'AGO': 4, 'SEP': 5,
+    'OCT': 6, 'NOV': 7, 'DIC': 8, 'ENE': 9, 'FEB': 10
 }
 
 # Mapeo posicional exacto para la pestaña de EGRESOS:
-# Columna A (OBS / Descripción) = 0, Columna B (MAYO) = 1, Columna C (JUNIO) = 2...
 MAPEO_EGRESOS = {
     'MAYO': 1, 'JUNIO': 2, 'JULIO': 3, 'AGOSTO': 4, 'SEPTIEMBRE': 5,
     'OCTUBRE': 6, 'NOVIEMBRE': 7, 'DICIEMBRE': 8, 'ENERO': 9, 'FEBRERO': 10
@@ -46,18 +44,19 @@ def descargar_csv(gid):
 @st.cache_data(ttl=1)
 def cargar_ingresos():
     df = descargar_csv(GID_INGRESOS)
-    if df.empty or len(df) <= 1:
+    if df.empty or len(df) <= 2:
         return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_INGRESOS.keys()) + ['Estudiante_Publico'])
         
     lista_ingresos = []
-    df_datos = df.iloc[1:].copy() # Fila 0 es la cabecera
+    # La fila 0 es "NOMINA 6TO B". La fila 1 contiene "MAY", "JUN"... Los datos reales empiezan en la fila 2.
+    df_datos = df.iloc[2:].copy() 
     
     for _, fila in df_datos.iterrows():
         if len(fila) <= 1:
             continue
-        nombre = str(fila.iloc[1]).strip()
+        nombre = str(fila.iloc[0]).strip()
         
-        if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "ESTUDIANTE" in nombre.upper():
+        if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "NOMINA" in nombre.upper():
             continue
             
         registro = {'Estudiante': nombre}
@@ -65,7 +64,7 @@ def cargar_ingresos():
             if col_idx < len(fila):
                 valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
                 try:
-                    registro[mes_nombre] = float(valor)
+                    registro[mes_nombre] = float(valor) if valor not in ["0", ""] else 0.0
                 except ValueError:
                     registro[mes_nombre] = 0.0
             else:
@@ -92,7 +91,7 @@ def cargar_egresos():
         return df_vacio
         
     lista_gastos = []
-    df_datos = df.iloc[1:].copy() # Fila 0 es la cabecera
+    df_datos = df.iloc[1:].copy() 
     
     for _, fila in df_datos.iterrows():
         if fila.empty or pd.isna(fila.iloc[0]):
@@ -106,7 +105,7 @@ def cargar_egresos():
             if col_idx < len(fila):
                 valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
                 try:
-                    monto = float(valor)
+                    monto = float(valor) if valor not in ["0", ""] else 0.0
                 except ValueError:
                     monto = 0.0
                     
@@ -122,7 +121,7 @@ def cargar_egresos():
         
     return pd.DataFrame(lista_gastos)
 
-# --- PROCESAMIENTO SEGURO ---
+# --- PROCESAMIENTO ---
 df_ingresos = cargar_ingresos()
 df_gastos = cargar_egresos()
 
@@ -166,7 +165,7 @@ with pestaña_balance:
 
 with pestaña_aportes:
     st.subheader("🔍 Buscador de Aportes por Estudiante")
-    if 'Estudiante_Publico' in df_ingresos.columns and not df_ingresos.empty and len(df_ingresos['Estudiante_Publico'].unique()) > 0:
+    if 'Estudiante_Publico' in df_ingresos.columns and not df_ingresos.empty:
         estudiante_sel = st.selectbox("Seleccione el alumno para verificar sus pagos:", sorted(df_ingresos['Estudiante_Publico'].dropna().unique()))
         filtro = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
         st.dataframe(filtro[['Estudiante'] + meses_cols], use_container_width=True)
@@ -177,7 +176,7 @@ with pestaña_aportes:
 
 with pestaña_egresos:
     st.subheader("📋 Cuentas Claras: Desglose de Egresos")
-    if not df_gastos.empty and "Monto ($)" in df_gastos.columns:
+    if not df_gastos.empty:
         st.dataframe(df_gastos, use_container_width=True)
         fig_pie = px.pie(df_gastos, values='Monto ($)', names='Concepto / Descripción', title='¿Cómo se distribuyen los gastos del aula?')
         st.plotly_chart(fig_pie, use_container_width=True)
