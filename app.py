@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import requests
+import io
 
 # Configuración de la interfaz del dashboard
 st.set_page_config(
@@ -12,11 +14,14 @@ st.set_page_config(
 # Identificador único de la hoja de cálculo en Google Drive
 SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
-# Parámetros numéricos internos de pestaña (GIDs) obligatorios
+# Parámetros numéricos internos de pestaña (GIDs) oficiales
 GID_INGRESOS = "0"
 GID_EGRESOS = "1460599602"  
 
-# Mapeo de columnas correspondientes a los meses del año lectivo
+# Mapeo de columnas según tu captura real:
+# Columna A (No.) = Índice 0
+# Columna B (Estudiante) = Índice 1
+# Columna C (MAYO) = Índice 2, Columna D (JUNIO) = Índice 3, etc.
 MAPEO_MESES = {
     'MAYO': 2,
     'JUNIO': 3,
@@ -30,101 +35,110 @@ MAPEO_MESES = {
     'FEBRERO': 11
 }
 
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=1)
+def descargar_csv_limpio(gid):
+    url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={gid}"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            # Leemos directamente asignando strings para evitar problemas de conversión numérica
+            return pd.read_csv(io.StringIO(response.text), header=None, dtype=str).fillna("0")
+        return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=1)
 def cargar_ingresos():
-    try:
-        url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID_INGRESOS}"
-        df = pd.read_csv(url_ingresos, header=None, dtype=str).fillna("0")
-        
-        df_datos = df.iloc[2:].copy()
-        lista_ingresos = []
-        
-        for _, fila in df_datos.iterrows():
-            if len(fila) <= 1:
-                continue
-            nombre = str(fila.iloc[1]).strip()
-            
-            if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "INGRESOS" in nombre.upper():
-                continue
-                
-            registro = {'Estudiante': nombre}
-            for mes_nombre, col_idx in MAPEO_MESES.items():
-                if col_idx < len(fila):
-                    valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
-                    try:
-                        registro[mes_nombre] = float(valor)
-                    except ValueError:
-                        registro[mes_nombre] = 0.0
-                else:
-                    registro[mes_nombre] = 0.0
-            lista_ingresos.append(registro)
-            
-        if not lista_ingresos:
-            return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_MESES.keys()))
-            
-        df_res = pd.DataFrame(lista_ingresos)
-        
-        def simplificar_nombre(n):
-            partes = str(n).split()
-            return f"{partes[0]} {partes[2]}" if len(partes) >= 3 else n
-            
-        df_res['Estudiante_Publico'] = df_res['Estudiante'].apply(simplificar_nombre)
-        return df_res
-    except Exception as e:
-        st.error(f"Error procesando pestaña INGRESOS: {e}")
+    df = descargar_csv_limpio(GID_INGRESOS)
+    if df.empty or len(df) <= 1:
         return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_MESES.keys()) + ['Estudiante_Publico'])
-
-@st.cache_data(ttl=2)
-def cargar_egresos():
-    try:
-        # Descarga la hoja completa usando la URL base de exportación genérica
-        url_egresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={GID_EGRESOS}"
-        df = pd.read_csv(url_egresos, header=None, dtype=str).fillna("0")
         
-        if df.empty or len(df) <= 1:
-            return pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
+    lista_ingresos = []
+    
+    # Tu cabecera real está en la fila 0 (No., Estudiante, MAYO...).
+    # Los datos puros de los alumnos empiezan estrictamente en la fila 1.
+    df_datos = df.iloc[1:].copy()
+    
+    for _, fila in df_datos.iterrows():
+        if len(fila) <= 1:
+            continue
             
-        df_datos = df.iloc[1:].copy()
-        lista_gastos = []
+        nombre = str(fila.iloc[1]).strip()
         
-        for _, fila in df_datos.iterrows():
-            if fila.empty or pd.isna(fila.iloc[0]):
-                continue
-            concepto = str(fila.iloc[0]).strip()
+        # Omitir únicamente celdas vacías accidentales o la fila de totales finales
+        if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "ESTUDIANTE" in nombre.upper():
+            continue
             
-            if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
-                continue
+        registro = {'Estudiante': nombre}
+        for mes_nombre, col_idx in MAPEO_MESES.items():
+            if col_idx < len(fila):
+                valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
+                try:
+                    registro[mes_nombre] = float(valor)
+                except ValueError:
+                    registro[mes_nombre] = 0.0
+            else:
+                registro[mes_nombre] = 0.0
                 
-            for mes_nombre, col_idx in MAPEO_MESES.items():
-                idx_gasto = col_idx - 1 
-                # Control estricto de desbordamiento por si la estructura del CSV devuelto es más angosta
-                if idx_gasto < len(fila):
-                    valor = str(fila.iloc[idx_gasto]).replace('$', '').replace(',', '').strip()
-                    try:
-                        monto = float(valor)
-                    except ValueError:
-                        monto = 0.0
-                        
-                    if monto > 0:
-                        lista_gastos.append({
-                            "Concepto / Descripción": concepto,
-                            "Mes": mes_nombre.capitalize(),
-                            "Monto ($)": monto
-                        })
-                        
-        if not lista_gastos:
-            return pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
-            
-        return pd.DataFrame(lista_gastos)
-    except Exception as e:
-        # Si la hoja está totalmente en blanco, Google genera un HTTP 400. Capturamos la excepción simulando una hoja vacía limpia.
-        return pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
+        lista_ingresos.append(registro)
+        
+    if not lista_ingresos:
+        return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_MESES.keys()) + ['Estudiante_Publico'])
+        
+    df_res = pd.DataFrame(lista_ingresos)
+    
+    # Simplificación de nombres para privacidad en la web pública
+    def simplificar_nombre(n):
+        partes = str(n).split()
+        return f"{partes[0]} {partes[2]}" if len(partes) >= 3 else n
+        
+    df_res['Estudiante_Publico'] = df_res['Estudiante'].apply(simplificar_nombre)
+    return df_res
 
-# Flujo lógico de procesamiento e renderizado de la interfaz
+@st.cache_data(ttl=1)
+def cargar_egresos():
+    df = descargar_csv_limpio(GID_EGRESOS)
+    if df.empty or len(df) <= 1:
+        return pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
+        
+    # Asumimos misma estructura limpia: fila 0 cabecera, fila 1 datos
+    df_datos = df.iloc[1:].copy()
+    lista_gastos = []
+    
+    for _, fila in df_datos.iterrows():
+        if fila.empty or pd.isna(fila.iloc[0]):
+            continue
+        concepto = str(fila.iloc[0]).strip()
+        
+        if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
+            continue
+            
+        for mes_nombre, col_idx in MAPEO_MESES.items():
+            # Ajuste de índice por si no tiene columna de numeración a la izquierda
+            idx_gasto = col_idx - 1 
+            if idx_gasto < len(fila):
+                valor = str(fila.iloc[idx_gasto]).replace('$', '').replace(',', '').strip()
+                try:
+                    monto = float(valor)
+                except ValueError:
+                    monto = 0.0
+                    
+                if monto > 0:
+                    lista_gastos.append({
+                        "Concepto / Descripción": concepto,
+                        "Mes": mes_nombre.capitalize(),
+                        "Monto ($)": monto
+                    })
+                    
+    if not lista_gastos:
+        return pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
+        
+    return pd.DataFrame(lista_gastos)
+
+# Procesamiento global
 df_ingresos = cargar_ingresos()
 df_gastos = cargar_egresos()
 
-# Inicialización de columnas requeridas por si los DataFrames vinieron vacíos
 meses_cols = list(MAPEO_MESES.keys())
 for col in meses_cols:
     if col not in df_ingresos.columns:
@@ -134,11 +148,11 @@ total_ingresos = df_ingresos[meses_cols].sum().sum() if not df_ingresos.empty el
 total_gastos = df_gastos["Monto ($)"].sum() if not df_gastos.empty else 0.0
 saldo_caja = total_ingresos - total_gastos
 
+# RENDERIZADO DEL DASHBOARD
 st.title("📊 Transparencia Financiera - 6to 'B'")
 st.markdown("Plataforma abierta para la revisión y auditoría de fondos de los padres de familia.")
 st.markdown("---")
 
-# Fila de indicadores financieros clave
 col_inc_1, col_inc_2, col_inc_3 = st.columns(3)
 with col_inc_1:
     st.metric(label="🟢 Total Recaudado (Ingresos)", value=f"${total_ingresos:,.2f}")
@@ -177,7 +191,7 @@ with pestaña_aportes:
         total_estudiante = filtro[meses_cols].sum(axis=1).values[0] if not filtro.empty else 0.0
         st.success(f"Aporte total entregado por el representante a la fecha: **${total_estudiante:,.2f}**")
     else:
-        st.info("No hay datos de alumnos registrados para mostrar.")
+        st.info("No se encontraron registros de estudiantes.")
 
 with pestaña_egresos:
     st.subheader("📋 Cuentas Claras: Desglose de Egresos")
