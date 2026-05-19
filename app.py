@@ -12,8 +12,9 @@ st.set_page_config(
 # ID único de tu documento de Google Sheets
 SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
-# Mapeo estricto de meses según la estructura visual de tus dos hojas de cálculo
-# Columna B = Mayo (Índice 1), Columna C = Junio (Índice 2), Columna D = Julio (Índice 3), etc.
+# Mapeo estricto de columnas según la estructura de tus hojas
+# Columna A = OBS/Nombres (Índice 0)
+# Columna B = MAYO (Índice 1), Columna C = JUNIO (Índice 2), Columna D = JULIO (Índice 3)...
 MAPEO_MESES = {
     'MAYO': 1,
     'JUNIO': 2,
@@ -27,198 +28,148 @@ MAPEO_MESES = {
     'FEBRERO': 10
 }
 
-# --- FUNCIÓN PARA CARGAR INGRESOS (TABLA DE ALUMNOS) ---
-@st.cache_data(ttl=2)
+# --- FUNCIÓN: CARGAR INGRESOS (ALUMNOS) ---
+@st.cache_data(ttl=5)
 def cargar_ingresos():
-    # Descarga directa de la primera pestaña usando gid=0
+    # Descarga de la primera pestaña usando gid=0 (INGRESOS)
     url_ingresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid=0"
-    
-    # Leemos el CSV sin saltar filas para mapear la estructura limpia desde la fila 2
     df = pd.read_csv(url_ingresos, header=None, dtype=str).fillna("0")
     
-    # La nómina real de alumnos empieza desde la fila indexada como 2 (Fila 3 de Sheets)
-    # Fila 0: cabecera vacía o título, Fila 1: Cabeceras de meses (A1=OBS, B1=MAYO, etc.)
+    # Nos saltamos las dos primeras filas de títulos/cabeceras mixtas para ir a los alumnos
     df_datos = df.iloc[2:].copy()
-    
-    lista_ingresos_limpios = []
+    lista_ingresos = []
     
     for _, fila in df_datos.iterrows():
-        nombre_estudiante = str(fila.iloc[0]).strip()
-        
-        # Saltamos filas de control, totales finales de la hoja o celdas vacías
-        if nombre_estudiante == "0" or nombre_estudiante == "" or "TOTAL" in nombre_estudiante.upper():
+        nombre = str(fila.iloc[0]).strip()
+        # Filtrar celdas vacías o filas de totales inferiores en la hoja
+        if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper():
             continue
             
-        # Construimos el diccionario base del estudiante
-        registro = {'Estudiante': nombre_estudiante}
-        
-        # Extraemos el valor numérico exacto asignado a cada mes por su posición de columna
-        for mes_nombre, col_indice in MAPEO_MESES.items():
-            if col_indice < len(fila):
-                valor_texto = str(fila.iloc[col_indice]).replace('$', '').replace(',', '').strip()
+        registro = {'Estudiante': nombre}
+        for mes_nombre, col_idx in MAPEO_MESES.items():
+            if col_idx < len(fila):
+                valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
                 try:
-                    registro[mes_nombre] = float(valor_texto)
+                    registro[mes_nombre] = float(valor)
                 except ValueError:
                     registro[mes_nombre] = 0.0
             else:
                 registro[mes_nombre] = 0.0
-                
-        lista_ingresos_limpios.append(registro)
+        lista_ingresos.append(registro)
         
-    if not lista_ingresos_limpios:
+    if not lista_ingresos:
         return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_MESES.keys()))
         
-    df_resultado = pd.DataFrame(lista_ingresos_limpios)
+    df_res = pd.DataFrame(lista_ingresos)
     
-    # Función para acortar nombres en la vista pública del aula
-    def simplificar_nombre(nombre_completo):
-        partes = str(nombre_completo).split()
-        if len(partes) >= 3:
-            return f"{partes[0]} {partes[2]}"
-        elif len(partes) == 2:
-            return f"{partes[0]} {partes[1]}"
-        return nombre_completo
-
-    df_resultado['Estudiante_Publico'] = df_resultado['Estudiante'].apply(simplificar_nombre)
-    return df_resultado
+    # Formato de nombre público para visualización rápida del aula
+    def simplificar(n):
+        p = str(n).split()
+        return f"{p[0]} {p[2]}" if len(p) >= 3 else n
+    df_res['Estudiante_Publico'] = df_res['Estudiante'].apply(simplificar)
+    return df_res
 
 
-# --- FUNCIÓN PARA CARGAR EGRESOS (TABLA DE GASTOS) ---
-@st.cache_data(ttl=2)
+# --- FUNCIÓN: CARGAR EGRESOS (GASTOS) ---
+@st.cache_data(ttl=5)
 def cargar_egresos():
-    # Descarga limpia apuntando directamente a la pestaña por su nombre string
+    # Usamos gid=1460599602 o exportación directa por índice/nombre alternativo para evitar el Error 400
+    # Si continúa el error 400, asegúrate de que la pestaña en tu Sheets se llame exactamente "EGRESOS"
     url_egresos = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&sheet=EGRESOS"
     
     df = pd.read_csv(url_egresos, header=None, dtype=str).fillna("0")
     
-    # Descartamos la fila de cabecera de texto (Fila 0) para procesar los registros puros
+    # La primera fila (índice 0) son las cabeceras (OBS, MAYO, JUNIO...)
     df_datos = df.iloc[1:].copy()
-    
     lista_gastos = []
     
     for _, fila in df_datos.iterrows():
         concepto = str(fila.iloc[0]).strip()
-        
-        # Evitamos leer filas vacías o la fila de totales calculados del propio Sheets
         if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper():
             continue
             
-        # Buscamos gastos mes por mes según las posiciones fijas de las columnas
-        for mes_nombre, col_indice in MAPEO_MESES.items():
-            if col_indice < len(fila):
-                valor_texto = str(fila.iloc[col_indice]).replace('$', '').replace(',', '').strip()
+        # Recorremos cada mes buscando montos mayores a 0 en esa fila
+        for mes_nombre, col_idx in MAPEO_MESES.items():
+            if col_idx < len(fila):
+                valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
                 try:
-                    monto = float(valor_texto)
+                    monto = float(valor)
                 except ValueError:
                     monto = 0.0
                     
                 if monto > 0:
                     lista_gastos.append({
                         "Concepto / Descripción": concepto,
-                        "Mes Correspondiente": mes_nombre.capitalize(),
+                        "Mes": mes_nombre.capitalize(),
                         "Monto ($)": monto
                     })
                     
     if not lista_gastos:
-        return pd.DataFrame(columns=["Concepto / Descripción", "Mes Correspondiente", "Monto ($)"])
+        return pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
         
     return pd.DataFrame(lista_gastos)
 
 
-# --- CONTROL DE EJECUCIÓN FINANCIERA ---
+# --- PROCESAMIENTO GENERAL ---
 try:
     df_ingresos = cargar_ingresos()
     df_gastos = cargar_egresos()
 except Exception as e:
     st.error(f"Error al conectar con Google Sheets en tiempo real: {e}")
+    st.info("💡 Consejo: Verifica que la pestaña de gastos se llame exactamente 'EGRESOS' en tu Google Sheets.")
     st.stop()
 
+# Lista de columnas de meses para cálculos matemáticos
+meses_cols = list(MAPEO_MESES.keys())
 
-# --- OPERACIONES CRUCIALES DE SUMA Y TOTALIZACIÓN ---
-meses_lista = list(MAPEO_MESES.keys())
-
-# Sumamos horizontal y verticalmente la matriz de ingresos puros calculados por Python
-total_ingresos = df_ingresos[meses_lista].sum().sum()
-
-# Sumamos la columna de montos de la lista estructurada de gastos de Python
+# Operación de suma total automatizada por Pandas
+total_ingresos = df_ingresos[meses_cols].sum().sum()
 total_gastos = df_gastos["Monto ($)"].sum() if not df_gastos.empty else 0.0
-
-# Cálculo del saldo real en caja
-saldo_disponible = total_ingresos - total_gastos
+saldo_caja = total_ingresos - total_gastos
 
 
-# --- INTERFAZ DEL DASHBOARD EN STREAMLIT ---
+# --- DISEÑO DE LA INTERFAZ ---
 st.title("📊 Transparencia Financiera - 6to 'B'")
-st.markdown("Plataforma abierta para la revisión y auditoría de fondos de los padres de familia.")
+st.markdown("Plataforma abierta para el control y rendición de cuentas del comité de padres.")
 st.markdown("---")
 
-# 1. BLOQUE DE MÉTRICAS PRINCIPALES
-col1, col2, col3 = st.columns(3)
-with col1:
+# Tarjetas de totales
+c1, c2, c3 = st.columns(3)
+with c1:
     st.metric(label="🟢 Total Recaudado (Ingresos)", value=f"${total_ingresos:,.2f}")
-with col2:
+with c2:
     st.metric(label="🔴 Total Invertido (Gastos)", value=f"${total_gastos:,.2f}")
-with col3:
-    st.metric(
-        label="🔵 Saldo Neto Disponible en Caja", 
-        value=f"${saldo_disponible:,.2f}",
-        delta=f"${saldo_disponible:,.2f}" if saldo_disponible >= 0 else f"-${abs(saldo_disponible):,.2f}",
-        delta_color="normal"
-    )
+with c3:
+    st.metric(label="🔵 Saldo Neto Disponible", value=f"${saldo_caja:,.2f}")
 
 st.markdown("---")
 
-# 2. PESTAÑAS DE NAVEGACIÓN DEL USUARIO
-tab_balance, tab_ingresos, tab_gastos = st.tabs(["% Balance de Caja", "🏦 Control de Aportes", "📋 Detalle de Gastos"])
+tab1, tab2, tab3 = st.tabs(["📊 Resumen de Caja", "🏦 Control de Ingresos", "📋 Detalle de Egresos"])
 
-with tab_balance:
-    st.subheader("Flujo de Efectivo Mensual")
-    df_comparativo = pd.DataFrame({
-        "Concepto": ["Ingresos Totales", "Gastos Totales"],
-        "Valor ($)": [total_ingresos, total_gastos],
-        "Tipo": ["Ingresos", "Gastos"]
+with tab1:
+    st.subheader("Estado de Cuenta General")
+    df_chart = pd.DataFrame({
+        "Flujo": ["Ingresos", "Gastos"],
+        "Valores ($)": [total_ingresos, total_gastos]
     })
-    fig_balance = px.bar(
-        df_comparativo, 
-        x="Concepto", 
-        y="Valor ($)", 
-        color="Tipo",
-        color_discrete_map={"Ingresos": "#2ecc71", "Gastos": "#e74c3c"},
-        text_auto='.2f'
-    )
-    st.plotly_chart(fig_balance, use_container_width=True)
+    fig = px.bar(df_chart, x="Flujo", y="Valores ($)", color="Flujo", 
+                 color_discrete_map={"Ingresos": "#2ecc71", "Gastos": "#e74c3c"}, text_auto='.2f')
+    st.plotly_chart(fig, use_container_width=True)
 
-with tab_ingresos:
-    st.subheader("🔍 Verificación de Aportes por Alumno")
+with tab2:
+    st.subheader("🔍 Consulta Individual de Aportes")
     if not df_ingresos.empty:
-        estudiante_sel = st.selectbox("Seleccione el alumno:", sorted(df_ingresos['Estudiante_Publico'].unique()))
-        datos_alumno = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
-        
-        st.dataframe(datos_alumno[['Estudiante_Publico'] + meses_lista], use_container_width=True)
-        
-        total_alumno = datos_alumno[meses_lista].sum(axis=1).values[0]
-        st.success(f"El alumno seleccionado registra un aporte acumulado de: **${total_alumno:,.2f}**.")
-    else:
-        st.info("No hay datos de alumnos procesados.")
-    
-    st.markdown("---")
-    st.subheader("📈 Tendencia de Recaudación Mensual")
-    ingresos_por_mes = df_ingresos[meses_lista].sum().reset_index()
-    ingresos_por_mes.columns = ['Mes', 'Total Recaudado']
-    fig_meses = px.line(ingresos_por_mes, x='Mes', y='Total Recaudado', markers=True)
-    st.plotly_chart(fig_meses, use_container_width=True)
+        selector = st.selectbox("Seleccione el nombre del estudiante:", sorted(df_ingresos['Estudiante_Publico'].unique()))
+        filtro = df_ingresos[df_ingresos['Estudiante_Publico'] == selector]
+        st.dataframe(filtro[['Estudiante_Publico'] + meses_cols], use_container_width=True)
+        sum_individual = filtro[meses_cols].sum(axis=1).values[0]
+        st.success(f"Aporte total acumulado de este estudiante: **${sum_individual:,.2f}**")
 
-with tab_gastos:
-    st.subheader("📋 Cuentas Claras: Desglose de Egresos")
+with tab3:
+    st.subheader("📋 Listado Detallado de Gastos Realizados")
     if not df_gastos.empty:
         st.dataframe(df_gastos, use_container_width=True)
-        st.markdown("---")
-        fig_gastos = px.pie(
-            df_gastos, 
-            values='Monto ($)', 
-            names='Concepto / Descripción', 
-            title='¿Cómo se distribuyen los egresos del aula?'
-        )
-        st.plotly_chart(fig_gastos, use_container_width=True)
+        fig_pie = px.pie(df_gastos, values='Monto ($)', names='Concepto / Descripción', title='Distribución del Gasto')
+        st.plotly_chart(fig_pie, use_container_width=True)
     else:
-        st.info("No se registran egresos guardados en la hoja de Google Sheets actualmente.")
+        st.info("No se registran gastos para los meses evaluados actualmente.")
