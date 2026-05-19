@@ -12,36 +12,37 @@ st.set_page_config(
     layout="wide"
 )
 
-# ID extraído directamente de la estructura del documento de tu captura de pantalla
-SPREADSHEET_ID = "1vQvB8RfFCeQKwZ9sT7tag7KSyOCVAakAZqAmVr4epUoHM0PwvpUkc4AzoQm9Xnce5jXF9ojROOLUMv7"
+# ID ORIGINAL extraído de tu enlace directo de Google Sheets
+SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
-# Parámetros numéricos internos de pestaña (GIDs) oficiales de tu documento
+# Parámetros numéricos internos de pestaña (GIDs) oficiales
 GID_INGRESOS = "0"
 GID_EGRESOS = "1460599602"  
 
-# Mapeo posicional exacto para la pestaña de INGRESOS
+# Mapeo posicional exacto para la pestaña de INGRESOS:
+# Columna A (Estudiante) = Índice 0, Columna B (MAY) = Índice 1, etc.
 MAPEO_INGRESOS = {
     'MAY': 1, 'JUN': 2, 'JUL': 3, 'AGO': 4, 'SEP': 5,
     'OCT': 6, 'NOV': 7, 'DIC': 8, 'ENE': 9, 'FEB': 10
 }
 
-# Mapeo posicional exacto para la pestaña de EGRESOS
+# Mapeo posicional exacto para la pestaña de EGRESOS:
+# Columna A (OBS / Concepto) = Índice 0, Columna B (MAYO) = Índice 1, etc.
 MAPEO_EGRESOS = {
     'MAYO': 1, 'JUNIO': 2, 'JULIO': 3, 'AGOSTO': 4, 'SEPTIEMBRE': 5,
     'OCTUBRE': 6, 'NOVIEMBRE': 7, 'DICIEMBRE': 8, 'ENERO': 9, 'FEBRERO': 10
 }
 
 def descargar_csv(gid):
-    """Descarga el CSV usando el endpoint de exportación directa y rompiendo la caché"""
-    # Usamos la estructura nativa de exportación que sí reconoce los gids perfectamente
+    """Descarga el CSV usando la URL de exportación nativa de Google Sheets rompiendo la caché"""
+    # Usamos el SPREADSHEET_ID correcto con el parámetro temporal &t para datos frescos en vivo
     url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={gid}&t={int(time.time())}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             return pd.read_csv(io.StringIO(response.text), header=None, dtype=str).fillna("0")
         return pd.DataFrame()
-    except Exception as e:
-        st.sidebar.error(f"Error de comunicación en la pestaña: {gid}")
+    except Exception:
         return pd.DataFrame()
 
 def cargar_ingresos():
@@ -50,7 +51,7 @@ def cargar_ingresos():
         return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_INGRESOS.keys()) + ['Estudiante_Publico'])
         
     lista_ingresos = []
-    # Fila 0: Título, Fila 1: Cabeceras, Fila 2: Datos de alumnos
+    # Fila 0: Título, Fila 1: Meses, Fila 2: Inicio de datos de alumnos
     df_datos = df.iloc[2:].copy() 
     
     for _, fila in df_datos.iterrows():
@@ -58,6 +59,7 @@ def cargar_ingresos():
             continue
         nombre = str(fila.iloc[0]).strip()
         
+        # Omitir filas vacías, totales o de control
         if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "NOMINA" in nombre.upper():
             continue
             
@@ -78,6 +80,7 @@ def cargar_ingresos():
         
     df_res = pd.DataFrame(lista_ingresos)
     
+    # Formateo público de nombres para resguardar la privacidad (Primer Nombre y Primer Apellido)
     def simplificar_nombre(n):
         partes = str(n).split()
         return f"{partes[0]} {partes[2]}" if len(partes) >= 3 else n
@@ -92,6 +95,7 @@ def cargar_egresos():
         return df_vacio
         
     lista_gastos = []
+    # Fila 0 es la cabecera de la pestaña de egresos, los datos empiezan en la 1
     df_datos = df.iloc[1:].copy()
     
     for _, fila in df_datos.iterrows():
@@ -131,7 +135,7 @@ for col in meses_cols:
     if col not in df_ingresos.columns:
         df_ingresos[col] = 0.0
 
-# Operaciones matemáticas de agregación
+# Operaciones matemáticas globales
 total_ingresos = float(df_ingresos[meses_cols].sum().sum()) if not df_ingresos.empty else 0.0
 total_gastos = float(df_gastos["Monto ($)"].sum()) if (not df_gastos.empty and "Monto ($)" in df_gastos.columns) else 0.0
 saldo_caja = total_ingresos - total_gastos
@@ -141,7 +145,7 @@ st.title("📊 Transparencia Financiera - 6to 'B'")
 st.markdown("Plataforma abierta para la revisión y auditoría de fondos de los padres de familia.")
 st.markdown("---")
 
-# Fila superior de tarjetas de métricas (KPIs)
+# Tarjetas de Métricas Principales (KPIs)
 col_inc_1, col_inc_2, col_inc_3 = st.columns(3)
 with col_inc_1:
     st.metric(label="🟢 Total Recaudado (Ingresos)", value=f"${total_ingresos:,.2f}")
@@ -152,7 +156,7 @@ with col_inc_3:
 
 st.markdown("---")
 
-# Estructura de navegación modular por pestañas
+# Secciones del Dashboard organizadas por Pestañas
 pestaña_balance, pestaña_aportes, pestaña_egresos = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "📋 Detalle de Gastos"])
 
 with pestaña_balance:
