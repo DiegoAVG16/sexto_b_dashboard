@@ -105,7 +105,8 @@ def cargar_egresos():
         if concepto == "0" or concepto == "" or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
             continue
             
-        for mes_nombre, col_idx in MAPEO_EGRESEDOS = MAPEO_EGRESOS.items():
+        # CORREGIDO: Eliminado el error de tipeo MAPEO_EGRESEDOS
+        for mes_nombre, col_idx in MAPEO_EGRESOS.items():
             if col_idx < len(fila):
                 valor = str(fila.iloc[col_idx]).replace('$', '').replace(',', '').strip()
                 try:
