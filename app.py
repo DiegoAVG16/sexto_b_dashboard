@@ -12,6 +12,9 @@ st.set_page_config(
     layout="wide"
 )
 
+# ID extraído directamente de la estructura del documento de tu captura de pantalla
+SPREADSHEET_ID = "1vQvB8RfFCeQKwZ9sT7tag7KSyOCVAakAZqAmVr4epUoHM0PwvpUkc4AzoQm9Xnce5jXF9ojROOLUMv7"
+
 # Parámetros numéricos internos de pestaña (GIDs) oficiales de tu documento
 GID_INGRESOS = "0"
 GID_EGRESOS = "1460599602"  
@@ -29,18 +32,16 @@ MAPEO_EGRESOS = {
 }
 
 def descargar_csv(gid):
-    """Descarga el CSV usando la URL de publicación limpia sin espacios y rompiendo la caché"""
-    # URL unificada rigurosamente sin espacios intermedios
-    url = f"https://docs.google.com/spreadsheets/d/e/2PACX-1vQvB8RfFCeQKwZ9sT7tag7KSyOCVAakAZqAmVr4epUoHM0PwvpUkc4AzoQm9Xnce5jXF9ojROOLUMv7/pub?output=csv&gid={gid}&t={int(time.time())}"
+    """Descarga el CSV usando el endpoint de exportación directa y rompiendo la caché"""
+    # Usamos la estructura nativa de exportación que sí reconoce los gids perfectamente
+    url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={gid}&t={int(time.time())}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            # Reemplazar valores nulos por "0" string de manera segura
             return pd.read_csv(io.StringIO(response.text), header=None, dtype=str).fillna("0")
         return pd.DataFrame()
     except Exception as e:
-        # Evita que la app colapse en blanco si hay problemas de red
-        st.sidebar.error(f"Error de conexión en pestaña {gid}")
+        st.sidebar.error(f"Error de comunicación en la pestaña: {gid}")
         return pd.DataFrame()
 
 def cargar_ingresos():
@@ -49,6 +50,7 @@ def cargar_ingresos():
         return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_INGRESOS.keys()) + ['Estudiante_Publico'])
         
     lista_ingresos = []
+    # Fila 0: Título, Fila 1: Cabeceras, Fila 2: Datos de alumnos
     df_datos = df.iloc[2:].copy() 
     
     for _, fila in df_datos.iterrows():
@@ -129,7 +131,7 @@ for col in meses_cols:
     if col not in df_ingresos.columns:
         df_ingresos[col] = 0.0
 
-# Operaciones de agregación matemática
+# Operaciones matemáticas de agregación
 total_ingresos = float(df_ingresos[meses_cols].sum().sum()) if not df_ingresos.empty else 0.0
 total_gastos = float(df_gastos["Monto ($)"].sum()) if (not df_gastos.empty and "Monto ($)" in df_gastos.columns) else 0.0
 saldo_caja = total_ingresos - total_gastos
@@ -150,7 +152,7 @@ with col_inc_3:
 
 st.markdown("---")
 
-# Estructura modular por pestañas
+# Estructura de navegación modular por pestañas
 pestaña_balance, pestaña_aportes, pestaña_egresos = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "📋 Detalle de Gastos"])
 
 with pestaña_balance:
