@@ -12,34 +12,33 @@ st.set_page_config(
     layout="wide"
 )
 
-# ID ORIGINAL extraído de tu enlace directo de Google Sheets
+# ID extraído de tu enlace directo
 SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 
-# Parámetros numéricos internos de pestaña (GIDs) oficiales
+# Parámetros numéricos internos de pestañas (GIDs)
 GID_INGRESOS = "0"
 GID_EGRESOS = "1460599602"  
 
-# Mapeo posicional exacto para la pestaña de INGRESOS:
-# Columna A (Estudiante) = Índice 0, Columna B (MAY) = Índice 1, etc.
+# Mapeo posicional corregido basado exactamente en tu estructura real:
+# Columna A (Índice 0): Nombres de estudiantes
+# Columna B (Índice 1): MAY, Columna C (Índice 2): JUN, etc.
 MAPEO_INGRESOS = {
     'MAY': 1, 'JUN': 2, 'JUL': 3, 'AGO': 4, 'SEP': 5,
     'OCT': 6, 'NOV': 7, 'DIC': 8, 'ENE': 9, 'FEB': 10
 }
 
-# Mapeo posicional exacto para la pestaña de EGRESOS:
-# Columna A (OBS / Concepto) = Índice 0, Columna B (MAYO) = Índice 1, etc.
 MAPEO_EGRESOS = {
     'MAYO': 1, 'JUNIO': 2, 'JULIO': 3, 'AGOSTO': 4, 'SEPTIEMBRE': 5,
     'OCTUBRE': 6, 'NOVIEMBRE': 7, 'DICIEMBRE': 8, 'ENERO': 9, 'FEBRERO': 10
 }
 
 def descargar_csv(gid):
-    """Descarga el CSV usando la URL de exportación nativa de Google Sheets rompiendo la caché"""
-    # Usamos el SPREADSHEET_ID correcto con el parámetro temporal &t para datos frescos en vivo
+    """Descarga el CSV usando la URL de exportación nativa rompiendo la caché"""
     url = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv&gid={gid}&t={int(time.time())}"
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
+            # Leemos sin procesar cabeceras automáticamente para controlar los índices de forma manual y estricta
             return pd.read_csv(io.StringIO(response.text), header=None, dtype=str).fillna("0")
         return pd.DataFrame()
     except Exception:
@@ -47,19 +46,20 @@ def descargar_csv(gid):
 
 def cargar_ingresos():
     df = descargar_csv(GID_INGRESOS)
-    if df.empty or len(df) <= 2:
+    if df.empty or len(df) <= 1:
         return pd.DataFrame(columns=['Estudiante'] + list(MAPEO_INGRESOS.keys()) + ['Estudiante_Publico'])
         
     lista_ingresos = []
-    # Fila 0: Título, Fila 1: Meses, Fila 2: Inicio de datos de alumnos
-    df_datos = df.iloc[2:].copy() 
+    # Fila 0 contiene las cabeceras ('NOMINA 6TO B', 'MAY', 'JUN'...).
+    # Por lo tanto, los datos reales de los estudiantes comienzan exactamente en la fila 1.
+    df_datos = df.iloc[1:].copy() 
     
     for _, fila in df_datos.iterrows():
         if len(fila) <= 1:
             continue
         nombre = str(fila.iloc[0]).strip()
         
-        # Omitir filas vacías, totales o de control
+        # Filtro de seguridad para ignorar celdas vacías o filas de totales inferiores
         if nombre == "0" or nombre == "" or "TOTAL" in nombre.upper() or "NOMINA" in nombre.upper():
             continue
             
@@ -80,7 +80,7 @@ def cargar_ingresos():
         
     df_res = pd.DataFrame(lista_ingresos)
     
-    # Formateo público de nombres para resguardar la privacidad (Primer Nombre y Primer Apellido)
+    # Formateo visual para el buscador público (Primer Nombre y Primer Apellido)
     def simplificar_nombre(n):
         partes = str(n).split()
         return f"{partes[0]} {partes[2]}" if len(partes) >= 3 else n
@@ -95,7 +95,7 @@ def cargar_egresos():
         return df_vacio
         
     lista_gastos = []
-    # Fila 0 es la cabecera de la pestaña de egresos, los datos empiezan en la 1
+    # Los datos de egresos comienzan en la fila 1 (la fila 0 son las cabeceras)
     df_datos = df.iloc[1:].copy()
     
     for _, fila in df_datos.iterrows():
@@ -135,7 +135,7 @@ for col in meses_cols:
     if col not in df_ingresos.columns:
         df_ingresos[col] = 0.0
 
-# Operaciones matemáticas globales
+# Operaciones y cálculos matemáticos globales
 total_ingresos = float(df_ingresos[meses_cols].sum().sum()) if not df_ingresos.empty else 0.0
 total_gastos = float(df_gastos["Monto ($)"].sum()) if (not df_gastos.empty and "Monto ($)" in df_gastos.columns) else 0.0
 saldo_caja = total_ingresos - total_gastos
@@ -145,7 +145,7 @@ st.title("📊 Transparencia Financiera - 6to 'B'")
 st.markdown("Plataforma abierta para la revisión y auditoría de fondos de los padres de familia.")
 st.markdown("---")
 
-# Tarjetas de Métricas Principales (KPIs)
+# Fila superior de tarjetas de métricas (KPIs)
 col_inc_1, col_inc_2, col_inc_3 = st.columns(3)
 with col_inc_1:
     st.metric(label="🟢 Total Recaudado (Ingresos)", value=f"${total_ingresos:,.2f}")
@@ -156,7 +156,7 @@ with col_inc_3:
 
 st.markdown("---")
 
-# Secciones del Dashboard organizadas por Pestañas
+# Estructura de navegación modular por pestañas
 pestaña_balance, pestaña_aportes, pestaña_egresos = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "📋 Detalle de Gastos"])
 
 with pestaña_balance:
