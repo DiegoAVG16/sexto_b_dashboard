@@ -170,7 +170,7 @@ with pestaña_aportes:
         estudiante_sel = st.selectbox("Seleccione el alumno para verificar sus pagos:", sorted(df_ingresos['Estudiante_Publico'].dropna().unique()))
         filtro = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
         st.dataframe(filtro[['Estudiante'] + meses_cols], use_container_width=True)
-        total_estudiante = filtro[meses_cols].sum(axis=1).values[0] if not filtro.empty else 0.0
+        total_estudiante = filter[meses_cols].sum(axis=1).values[0] if not filtro.empty else 0.0
         st.success(f"Aporte total entregado por el representante a la fecha: **${total_estudiante:,.2f}**")
     else:
         st.info("No se encontraron registros de estudiantes válidos en la pestaña de ingresos.")
@@ -196,10 +196,15 @@ with pestaña_egresos:
             
             # Extraemos el ID correspondiente al concepto seleccionado
             id_comprobante = egresos_con_foto[egresos_con_foto["Concepto / Descripción"] == gasto_sel]["ID_Factura"].values[0]
-            url_factura = f"https://drive.google.com/file/d/{id_comprobante}/preview"
             
-            # Desplegamos el iframe interactivo con scrolling habilitado para documentos con múltiples hojas
-            st.components.v1.iframe(url_factura, height=550, scrolling=True)
+            # Lógica inteligente: Si es el ID largo del Google Doc, cambia la URL a formato de documentos nativos
+            if len(id_comprobante) >= 40:
+                url_factura = f"https://docs.google.com/document/d/{id_comprobante}/preview"
+            else:
+                url_factura = f"https://drive.google.com/file/d/{id_comprobante}/preview"
+            
+            # Desplegamos el iframe interactivo con scrolling habilitado para deslizarse por las hojas
+            st.components.v1.iframe(url_factura, height=580, scrolling=True)
         else:
             st.info("Aún no se han enlazado IDs de soporte en la columna 'ID_Factura' del archivo Excel.")
             
