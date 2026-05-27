@@ -19,6 +19,21 @@ SPREADSHEET_ID = "1VbIg_GdnA9NFpgECH0SCHgqhCUsDmHVu0d5r-RJxnJY"
 GID_INGRESOS = "764689503"
 GID_EGRESOS = "360125157"
 
+# --- CONFIGURACIÓN DE EVENTOS Y FOTOS (GOOGLE DRIVE) ---
+# Reemplaza los IDs de ejemplo (todo lo que va después de id=) por tus IDs reales de las fotos.
+EVENTOS_FOTOS = {
+    "🎉 Evento de Bienvenida": [
+        "https://docs.google.com/uc?export=view&id=1_EjemploID_Foto1_Aqui",
+        "https://docs.google.com/uc?export=view&id=1_EjemploID_Foto2_Aqui"
+    ],
+    "🧹 Minga del Aula y Mantenimiento": [
+        "https://docs.google.com/uc?export=view&id=1_EjemploID_Foto3_Aqui"
+    ],
+    "🎁 Agasajo Navideño / Fin de Año": [
+        "https://docs.google.com/uc?export=view&id=1_EjemploID_Foto4_Aqui"
+    ]
+}
+
 def limpiar_monto(valor):
     """Convierte texto con símbolos de moneda a números flotantes de forma segura"""
     if pd.isna(valor):
@@ -155,7 +170,12 @@ with col_inc_3:
 st.markdown("---")
 
 # Organización modular mediante pestañas estéticas
-pestaña_balance, pestaña_aportes, pestaña_egresos = st.tabs(["📉 Balance de Caja", "💰 Control de Aportes", "📋 Detalle de Gastos"])
+pestaña_balance, pestaña_aportes, pestaña_egresos, pestaña_eventos = st.tabs([
+    "📉 Balance de Caja", 
+    "💰 Control de Aportes", 
+    "📋 Detalle de Gastos",
+    "📸 Eventos Realizados"
+])
 
 with pestaña_balance:
     st.subheader("Flujo de Efectivo Mensual")
@@ -188,3 +208,30 @@ with pestaña_egresos:
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
         st.info("No se registran egresos estructurados válidos en tu hoja de cálculo actualmente.")
+
+with pestaña_eventos:
+    st.subheader("📸 Galería de Eventos y Evidencias")
+    st.markdown("Revisa el registro fotográfico de las actividades y compras realizadas por el comité.")
+    
+    if EVENTOS_FOTOS:
+        # Selector del evento a auditar visualmente
+        evento_sel = st.selectbox("Seleccione un evento realizado:", list(EVENTOS_FOTOS.keys()))
+        st.write("---")
+        
+        fotos = EVENTOS_FOTOS[evento_sel]
+        
+        if fotos:
+            # Rejilla dinámica de 3 columnas para evitar que se desborde verticalmente
+            columnas_fotos = st.columns(3)
+            for idx, url_foto in enumerate(fotos):
+                col_actual = columnas_fotos[idx % 3]
+                with col_actual:
+                    st.image(
+                        url_foto, 
+                        caption=f"Evidencia {idx + 1} - {evento_sel}", 
+                        use_container_width=True
+                    )
+        else:
+            st.info("No se han adjuntado imágenes para este evento en particular.")
+    else:
+        st.info("No se registran carpetas de eventos multimedia actualmente.")
