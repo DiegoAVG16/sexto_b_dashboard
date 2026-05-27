@@ -170,7 +170,7 @@ with pestaña_aportes:
         estudiante_sel = st.selectbox("Seleccione el alumno para verificar sus pagos:", sorted(df_ingresos['Estudiante_Publico'].dropna().unique()))
         filtro = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
         st.dataframe(filtro[['Estudiante'] + meses_cols], use_container_width=True)
-        totaltotal_estudiante = filtro[meses_cols].sum(axis=1).values[0] if not filtro.empty else 0.0
+        total_estudiante = filtro[meses_cols].sum(axis=1).values[0] if not filtro.empty else 0.0
         st.success(f"Aporte total entregado por el representante a la fecha: **${total_estudiante:,.2f}**")
     else:
         st.info("No se encontraron registros de estudiantes válidos en la pestaña de ingresos.")
