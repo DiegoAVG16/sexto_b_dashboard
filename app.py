@@ -92,7 +92,6 @@ def cargar_egresos():
         if concepto in ["0", "", "nan"] or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
             continue
             
-        # Extraemos el ID de la factura/documento si existe en la fila
         id_factura = str(fila['ID_Factura']).strip() if 'ID_Factura' in df.columns else ""
         if id_factura in ["nan", "0", ""]:
             id_factura = ""
@@ -177,36 +176,55 @@ with pestaña_aportes:
 
 with pestaña_egresos:
     st.subheader("📋 Cuentas Claras: Desglose de Egresos")
+    st.markdown("💡 *Haga clic en la casilla izquierda de cualquier fila para desplegar automáticamente sus comprobantes abajo.*")
+    
     if not df_gastos.empty and "Monto ($)" in df_gastos.columns:
-        # Mostramos la tabla omitiendo la columna técnica del ID para mantener la estética limpia
+        # Definimos las columnas visibles quitando la técnica del ID
         columnas_visibles = [c for c in df_gastos.columns if c != "ID_Factura"]
-        st.dataframe(df_gastos[columnas_visibles], use_container_width=True)
+        
+        # TABLA INTERACTIVA: Habilitamos la selección por fila única
+        seleccion = st.dataframe(
+            df_gastos[columnas_visibles], 
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="single-row"
+        )
         
         st.markdown("---")
         st.subheader("🧾 Visor Digital de Comprobantes y Facturas")
         
-        # Filtramos únicamente los egresos que sí tengan un soporte digital cargado
-        egresos_con_foto = df_gastos[df_gastos["ID_Factura"] != ""]
+        # Inicializamos variables de control para saber qué ID cargar
+        id_comprobante = ""
+        concepto_seleccionado = ""
         
-        if not egresos_con_foto.empty:
-            gasto_sel = st.selectbox(
-                "Seleccione un gasto para verificar sus comprobantes de soporte:",
-                egresos_con_foto["Concepto / Descripción"].unique()
-            )
+        # Verificamos si el usuario seleccionó una fila de la tabla
+        filas_seleccionadas = seleccion.get("selection", {}).get("rows", [])
+        
+        if filas_seleccionadas:
+            # Obtenemos el índice real basado en el clic
+            idx_fila = filas_seleccionadas[0]
+            concepto_seleccionado = df_gastos.iloc[idx_fila]["Concepto / Descripción"]
+            id_comprobante = df_gastos.iloc[idx_fila]["ID_Factura"]
+        else:
+            # Si no hay clic directo, dejamos por defecto la primera fila que posea un ID válido
+            egresos_con_foto = df_gastos[df_gastos["ID_Factura"] != ""]
+            if not egresos_con_foto.empty:
+                concepto_seleccionado = egresos_con_foto.iloc[0]["Concepto / Descripción"]
+                id_comprobante = egresos_con_foto.iloc[0]["ID_Factura"]
+
+        # Renderizado dinámico del documento si se detectó un ID válido
+        if id_comprobante:
+            st.info(f"Mostrando comprobantes de: **{concepto_seleccionado}**")
             
-            # Extraemos el ID correspondiente al concepto seleccionado
-            id_comprobante = egresos_con_foto[egresos_con_foto["Concepto / Descripción"] == gasto_sel]["ID_Factura"].values[0]
-            
-            # Lógica inteligente: Si es el ID largo del Google Doc, cambia la URL a formato de documentos nativos
+            # Formateo inteligente según la extensión del ID
             if len(id_comprobante) >= 40:
                 url_factura = f"https://docs.google.com/document/d/{id_comprobante}/preview"
             else:
                 url_factura = f"https://drive.google.com/file/d/{id_comprobante}/preview"
             
-            # Desplegamos el iframe interactivo con scrolling habilitado para deslizarse por las hojas
-            st.components.v1.iframe(url_factura, height=580, scrolling=True)
+            st.components.v1.iframe(url_factura, height=620, scrolling=True)
         else:
-            st.info("Aún no se han enlazado IDs de soporte en la columna 'ID_Factura' del archivo Excel.")
+            st.warning("El gasto seleccionado o por defecto no tiene ningún documento enlazado en la columna 'ID_Factura'.")
             
         st.markdown("---")
         fig_pie = px.pie(df_gastos, values='Monto ($)', names='Concepto / Descripción', title='¿Cómo se distribuyen los fondos invertidos?')
