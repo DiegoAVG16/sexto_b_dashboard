@@ -182,13 +182,17 @@ with pestaña_eventos:
     st.subheader("📸 Galería de Eventos y Evidencias Multimedia")
     st.markdown("Selecciona una de las actividades del comité para verificar los soportes visuales.")
     
-    # --- DICCIONARIO DE CONTROL DE FOTOS (Formato Seguro con /preview e iframe) ---
+    # --- DICCIONARIO DE CONTROL DE FOTOS ---
+    # Categorías sincronizadas. Deja tus IDs listos en la lista del Día del Niño al conseguirlos.
     EVENTOS_MANUALES = {
         "🔨 Arreglo de Aula": [
             "https://drive.google.com/file/d/1-Z1Mu4XYv17tR8fPJjBobfA8eYelOzxB/preview",
             "https://drive.google.com/file/d/15wt_jzujEIOcyPHv4hHd9kI4pik_jxkX/preview",
             "https://drive.google.com/file/d/1HxOO9Dujkj2uNsd-AmTaOOMZTbmvCrGp/preview",
             "https://drive.google.com/file/d/1f3eo6-ngGvBwii40IJcQUYQs_LLO8ods/preview"
+        ],
+        "🎉 Programa del Día del Niño": [
+            # Cuando subas fotos a esta carpeta, pon los enlaces aquí usando el mismo formato superior.
         ]
     }
     
@@ -201,8 +205,8 @@ with pestaña_eventos:
         for idx, url_foto in enumerate(fotos):
             col_actual = columnas_fotos[idx % 3]
             with col_actual:
-                # Incrustamos la vista previa nativa e interactiva de Google Drive de forma segura
-                st.components.v1.iframe(url_foto, height=300, scrolling=False)
+                # Modificado con ancho del 100% adaptable para evitar problemas de visualización
+                st.components.v1.iframe(url_foto, height=320, scrolling=False)
                 st.caption(f"Evidencia {idx + 1} - {evento_sel}")
     else:
         st.info(f"Aún no se han enlazado imágenes en el código para el evento '{evento_sel}'.")
