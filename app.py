@@ -176,13 +176,12 @@ with pestaña_aportes:
 
 with pestaña_egresos:
     st.subheader("📋 Cuentas Claras: Desglose de Egresos")
-    st.markdown("💡 *Haga clic en la casilla izquierda de cualquier fila para desplegar automáticamente sus comprobantes abajo.*")
+    st.markdown("💡 *Seleccione la casilla izquierda de cualquier fila para desplegar su comprobante abajo.*")
     
     if not df_gastos.empty and "Monto ($)" in df_gastos.columns:
-        # Definimos las columnas visibles quitando la técnica del ID
         columnas_visibles = [c for c in df_gastos.columns if c != "ID_Factura"]
         
-        # TABLA INTERACTIVA: Habilitamos la selección por fila única
+        # TABLA INTERACTIVA: Retorna el estado de selección en tiempo real
         seleccion = st.dataframe(
             df_gastos[columnas_visibles], 
             use_container_width=True,
@@ -190,42 +189,30 @@ with pestaña_egresos:
             selection_mode="single-row"
         )
         
-        st.markdown("---")
-        st.subheader("🧾 Visor Digital de Comprobantes y Facturas")
-        
-        # Inicializamos variables de control para saber qué ID cargar
-        id_comprobante = ""
-        concepto_seleccionado = ""
-        
-        # Verificamos si el usuario seleccionó una fila de la tabla
+        # Capturamos las filas activas mediante el check
         filas_seleccionadas = seleccion.get("selection", {}).get("rows", [])
         
+        # CONDICIONAL: Solo si hay un check activo, renderizamos la sección del visor
         if filas_seleccionadas:
-            # Obtenemos el índice real basado en el clic
+            st.markdown("---")
+            st.subheader("🧾 Visor Digital de Comprobantes y Facturas")
+            
             idx_fila = filas_seleccionadas[0]
             concepto_seleccionado = df_gastos.iloc[idx_fila]["Concepto / Descripción"]
             id_comprobante = df_gastos.iloc[idx_fila]["ID_Factura"]
-        else:
-            # Si no hay clic directo, dejamos por defecto la primera fila que posea un ID válido
-            egresos_con_foto = df_gastos[df_gastos["ID_Factura"] != ""]
-            if not egresos_con_foto.empty:
-                concepto_seleccionado = egresos_con_foto.iloc[0]["Concepto / Descripción"]
-                id_comprobante = egresos_con_foto.iloc[0]["ID_Factura"]
-
-        # Renderizado dinámico del documento si se detectó un ID válido
-        if id_comprobante:
-            st.info(f"Mostrando comprobantes de: **{concepto_seleccionado}**")
             
-            # Formateo inteligente según la extensión del ID
-            if len(id_comprobante) >= 40:
-                url_factura = f"https://docs.google.com/document/d/{id_comprobante}/preview"
+            if id_comprobante:
+                st.info(f"Mostrando comprobantes de: **{concepto_seleccionado}**")
+                
+                if len(id_comprobante) >= 40:
+                    url_factura = f"https://docs.google.com/document/d/{id_comprobante}/preview"
+                else:
+                    url_factura = f"https://drive.google.com/file/d/{id_comprobante}/preview"
+                
+                st.components.v1.iframe(url_factura, height=620, scrolling=True)
             else:
-                url_factura = f"https://drive.google.com/file/d/{id_comprobante}/preview"
-            
-            st.components.v1.iframe(url_factura, height=620, scrolling=True)
-        else:
-            st.warning("El gasto seleccionado o por defecto no tiene ningún documento enlazado en la columna 'ID_Factura'.")
-            
+                st.warning(f"El gasto '{concepto_seleccionado}' no tiene ningún documento digitalizado en la columna 'ID_Factura'.")
+        
         st.markdown("---")
         fig_pie = px.pie(df_gastos, values='Monto ($)', names='Concepto / Descripción', title='¿Cómo se distribuyen los fondos invertidos?')
         st.plotly_chart(fig_pie, use_container_width=True)
