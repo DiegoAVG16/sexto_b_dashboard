@@ -78,7 +78,7 @@ def cargar_ingresos():
 
 def cargar_egresos():
     df = descargar_pestaña_csv(GID_EGRESOS)
-    df_vacio = pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)"])
+    df_vacio = pd.DataFrame(columns=["Concepto / Descripción", "Mes", "Monto ($)", "ID_Factura"])
     
     if df.empty:
         return df_vacio
@@ -92,6 +92,11 @@ def cargar_egresos():
         if concepto in ["0", "", "nan"] or "TOTAL" in concepto.upper() or "OBS" in concepto.upper():
             continue
             
+        # Extraemos el ID de la factura/documento si existe en la fila
+        id_factura = str(fila['ID_Factura']).strip() if 'ID_Factura' in df.columns else ""
+        if id_factura in ["nan", "0", ""]:
+            id_factura = ""
+            
         for mes in meses_egresos:
             if mes in df.columns:
                 monto = limpiar_monto(fila[mes])
@@ -99,7 +104,8 @@ def cargar_egresos():
                     lista_gastos.append({
                         "Concepto / Descripción": concepto,
                         "Mes": mes.capitalize(),
-                        "Monto ($)": monto
+                        "Monto ($)": monto,
+                        "ID_Factura": id_factura
                     })
                     
     if not lista_gastos:
@@ -172,7 +178,32 @@ with pestaña_aportes:
 with pestaña_egresos:
     st.subheader("📋 Cuentas Claras: Desglose de Egresos")
     if not df_gastos.empty and "Monto ($)" in df_gastos.columns:
-        st.dataframe(df_gastos, use_container_width=True)
+        # Mostramos la tabla omitiendo la columna técnica del ID para mantener la estética limpia
+        columnas_visibles = [c for c in df_gastos.columns if c != "ID_Factura"]
+        st.dataframe(df_gastos[columnas_visibles], use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("🧾 Visor Digital de Comprobantes y Facturas")
+        
+        # Filtramos únicamente los egresos que sí tengan un soporte digital cargado
+        egresos_con_foto = df_gastos[df_gastos["ID_Factura"] != ""]
+        
+        if not egresos_con_foto.empty:
+            gasto_sel = st.selectbox(
+                "Seleccione un gasto para verificar sus comprobantes de soporte:",
+                egresos_con_foto["Concepto / Descripción"].unique()
+            )
+            
+            # Extraemos el ID correspondiente al concepto seleccionado
+            id_comprobante = egresos_con_foto[egresos_con_foto["Concepto / Descripción"] == gasto_sel]["ID_Factura"].values[0]
+            url_factura = f"https://drive.google.com/file/d/{id_comprobante}/preview"
+            
+            # Desplegamos el iframe interactivo con scrolling habilitado para documentos con múltiples hojas
+            st.components.v1.iframe(url_factura, height=550, scrolling=True)
+        else:
+            st.info("Aún no se han enlazado IDs de soporte en la columna 'ID_Factura' del archivo Excel.")
+            
+        st.markdown("---")
         fig_pie = px.pie(df_gastos, values='Monto ($)', names='Concepto / Descripción', title='¿Cómo se distribuyen los fondos invertidos?')
         st.plotly_chart(fig_pie, use_container_width=True)
     else:
@@ -182,8 +213,6 @@ with pestaña_eventos:
     st.subheader("📸 Galería de Eventos y Evidencias Multimedia")
     st.markdown("Selecciona una de las actividades del comité para verificar los soportes visuales.")
     
-    # --- DICCIONARIO DE CONTROL DE FOTOS ---
-    # Categorías sincronizadas. Deja tus IDs listos en la lista del Día del Niño al conseguirlos.
     EVENTOS_MANUALES = {
         "🔨 Arreglo de Aula": [
             "https://drive.google.com/file/d/1-Z1Mu4XYv17tR8fPJjBobfA8eYelOzxB/preview",
@@ -192,7 +221,7 @@ with pestaña_eventos:
             "https://drive.google.com/file/d/1f3eo6-ngGvBwii40IJcQUYQs_LLO8ods/preview"
         ],
         "🎉 Programa del Día del Niño": [
-            # Cuando subas fotos a esta carpeta, pon los enlaces aquí usando el mismo formato superior.
+            # Espacio libre para los IDs del Día del Niño
         ]
     }
     
@@ -205,7 +234,6 @@ with pestaña_eventos:
         for idx, url_foto in enumerate(fotos):
             col_actual = columnas_fotos[idx % 3]
             with col_actual:
-                # Modificado con ancho del 100% adaptable para evitar problemas de visualización
                 st.components.v1.iframe(url_foto, height=320, scrolling=False)
                 st.caption(f"Evidencia {idx + 1} - {evento_sel}")
     else:
