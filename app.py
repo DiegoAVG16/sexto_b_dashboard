@@ -182,14 +182,13 @@ with pestaña_eventos:
     st.subheader("📸 Galería de Eventos y Evidencias Multimedia")
     st.markdown("Selecciona una de las actividades del comité para verificar los soportes visuales.")
     
-    # --- DICCIONARIO DE CONTROL DE FOTOS ---
-    # Se agregaron los 4 IDs de imagen proveídos para el evento Arreglo de Aula
+    # --- DICCIONARIO DE CONTROL DE FOTOS (Formato Seguro con /preview e iframe) ---
     EVENTOS_MANUALES = {
         "🔨 Arreglo de Aula": [
-            "https://docs.google.com/uc?export=view&id=1-Z1Mu4XYv17tR8fPJjBobfA8eYelOzxB",
-            "https://docs.google.com/uc?export=view&id=15wt_jzujEIOcyPHv4hHd9kI4pik_jxkX",
-            "https://docs.google.com/uc?export=view&id=1HxOO9Dujkj2uNsd-AmTaOOMZTbmvCrGp",
-            "https://docs.google.com/uc?export=view&id=1f3eo6-ngGvBwii40IJcQUYQs_LLO8ods"
+            "https://drive.google.com/file/d/1-Z1Mu4XYv17tR8fPJjBobfA8eYelOzxB/preview",
+            "https://drive.google.com/file/d/15wt_jzujEIOcyPHv4hHd9kI4pik_jxkX/preview",
+            "https://drive.google.com/file/d/1HxOO9Dujkj2uNsd-AmTaOOMZTbmvCrGp/preview",
+            "https://drive.google.com/file/d/1f3eo6-ngGvBwii40IJcQUYQs_LLO8ods/preview"
         ]
     }
     
@@ -202,6 +201,8 @@ with pestaña_eventos:
         for idx, url_foto in enumerate(fotos):
             col_actual = columnas_fotos[idx % 3]
             with col_actual:
-                st.image(url_foto, caption=f"Evidencia {idx + 1} - {evento_sel}", use_container_width=True)
+                # Incrustamos la vista previa nativa e interactiva de Google Drive de forma segura
+                st.components.v1.iframe(url_foto, height=300, scrolling=False)
+                st.caption(f"Evidencia {idx + 1} - {evento_sel}")
     else:
         st.info(f"Aún no se han enlazado imágenes en el código para el evento '{evento_sel}'.")
