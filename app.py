@@ -160,4 +160,46 @@ with pestaña_balance:
 
 with pestaña_aportes:
     st.subheader("🔍 Buscador de Aportes por Estudiante")
-    if not df_ingresos.empty and 'Estudiante_Publico' in df_ingresos.columns and len(
+    # CORREGIDO: Condicional cerrado correctamente sin errores de sintaxis
+    if not df_ingresos.empty and 'Estudiante_Publico' in df_ingresos.columns and len(df_ingresos['Estudiante_Publico'].unique()) > 0:
+        estudiante_sel = st.selectbox("Seleccione el alumno para verificar sus pagos:", sorted(df_ingresos['Estudiante_Publico'].dropna().unique()))
+        filtro = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
+        st.dataframe(filtro[['Estudiante'] + meses_cols], use_container_width=True)
+        total_estudiante = filtro[meses_cols].sum(axis=1).values[0] if not filtro.empty else 0.0
+        st.success(f"Aporte total entregado por el representante a la fecha: **${total_estudiante:,.2f}**")
+    else:
+        st.info("No se encontraron registros de estudiantes válidos en la pestaña de ingresos.")
+
+with pestaña_egresos:
+    st.subheader("📋 Cuentas Claras: Desglose de Egresos")
+    if not df_gastos.empty and "Monto ($)" in df_gastos.columns:
+        st.dataframe(df_gastos, use_container_width=True)
+        fig_pie = px.pie(df_gastos, values='Monto ($)', names='Concepto / Descripción', title='¿Cómo se distribuyen los fondos invertidos?')
+        st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("No se registran egresos estructurados válidos en tu hoja de cálculo actualmente.")
+
+with pestaña_eventos:
+    st.subheader("📸 Galería de Eventos y Evidencias Multimedia")
+    st.markdown("Selecciona una de las actividades del comité para verificar los soportes visuales.")
+    
+    # --- DICCIONARIO DE CONTROL DE FOTOS ---
+    # Coloca aquí dentro los enlaces finales con formato: "https://docs.google.com/uc?export=view&id=ID_DE_DRIVE"
+    EVENTOS_MANUALES = {
+        "🔨 Arreglo de Aula": [
+            # Ejemplo: "https://docs.google.com/uc?export=view&id=1A2B3C4D5E6F..."
+        ]
+    }
+    
+    evento_sel = st.selectbox("Seleccione un evento realizado:", list(EVENTOS_MANUALES.keys()))
+    st.write("---")
+    
+    fotos = EVENTOS_MANUALES[evento_sel]
+    if fotos:
+        columnas_fotos = st.columns(3)
+        for idx, url_foto in enumerate(fotos):
+            col_actual = columnas_fotos[idx % 3]
+            with col_actual:
+                st.image(url_foto, caption=f"Evidencia {idx + 1} - {evento_sel}", use_container_width=True)
+    else:
+        st.info(f"Aún no se han enlazado imágenes en el código para el evento '{evento_sel}'.")
