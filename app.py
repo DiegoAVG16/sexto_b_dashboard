@@ -160,7 +160,6 @@ with pestaña_balance:
 
 with pestaña_aportes:
     st.subheader("🔍 Buscador de Aportes por Estudiante")
-    # CORREGIDO: Condicional cerrado correctamente sin errores de sintaxis
     if not df_ingresos.empty and 'Estudiante_Publico' in df_ingresos.columns and len(df_ingresos['Estudiante_Publico'].unique()) > 0:
         estudiante_sel = st.selectbox("Seleccione el alumno para verificar sus pagos:", sorted(df_ingresos['Estudiante_Publico'].dropna().unique()))
         filtro = df_ingresos[df_ingresos['Estudiante_Publico'] == estudiante_sel]
@@ -184,10 +183,13 @@ with pestaña_eventos:
     st.markdown("Selecciona una de las actividades del comité para verificar los soportes visuales.")
     
     # --- DICCIONARIO DE CONTROL DE FOTOS ---
-    # Coloca aquí dentro los enlaces finales con formato: "https://docs.google.com/uc?export=view&id=ID_DE_DRIVE"
+    # Se agregaron los 4 IDs de imagen proveídos para el evento Arreglo de Aula
     EVENTOS_MANUALES = {
         "🔨 Arreglo de Aula": [
-            # Ejemplo: "https://docs.google.com/uc?export=view&id=1A2B3C4D5E6F..."
+            "https://docs.google.com/uc?export=view&id=1-Z1Mu4XYv17tR8fPJjBobfA8eYelOzxB",
+            "https://docs.google.com/uc?export=view&id=15wt_jzujEIOcyPHv4hHd9kI4pik_jxkX",
+            "https://docs.google.com/uc?export=view&id=1HxOO9Dujkj2uNsd-AmTaOOMZTbmvCrGp",
+            "https://docs.google.com/uc?export=view&id=1f3eo6-ngGvBwii40IJcQUYQs_LLO8ods"
         ]
     }
     
